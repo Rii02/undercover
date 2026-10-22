@@ -5,28 +5,66 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Undercover: Kasus Kejahatan Siber</title>
 <style>
-  :root{ --bg:#0a0e1a; --panel:#161d2e; --accent:#f5a623; --off:#3d4759; --text:#eef2f7; }
+  :root{ --bg:#0a0e1a; --panel:#161d2e; --accent:#f5a623; --off:#3d4759; --wire:#5b6b7f; --text:#eef2f7; }
   *{box-sizing:border-box; touch-action:manipulation}
   html,body{height:100%; margin:0}
   body{background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:8px; display:flex; justify-content:center}
-  .panel{background:var(--panel); border-radius:14px; padding:12px; width:100%; max-width:960px; box-shadow:0 4px 20px rgba(0,0,0,.2)}
-  #mapCanvasSlot{width:100%; height:min(70dvh, 640px); min-height:240px; image-rendering:pixelated}
+  .panel{position:relative; background:var(--panel); border-radius:14px; padding:12px; width:100%; max-width:960px; box-shadow:0 4px 20px rgba(0,0,0,.2)}
+  .statrow{display:flex; justify-content:space-between; align-items:center; font-size:.95rem; margin-bottom:8px}
+  #mapCanvasSlot{width:100%; height:min(60dvh, 600px); min-height:240px; image-rendering:pixelated}
   #mapCanvasSlot canvas{border-radius:10px; display:block}
+  #toast{min-height:1.4em; font-weight:600; text-align:center; color:var(--accent); margin-top:8px; font-size:.85rem}
+  #logBtn{border:2px solid var(--accent); background:transparent; color:var(--accent); border-radius:8px; padding:4px 10px; cursor:pointer; font-weight:700}
   .dpad{display:grid; grid-template-columns:repeat(3,48px); grid-template-rows:repeat(3,48px); gap:4px; justify-content:center; margin-top:8px}
   .dpad button{border:none; border-radius:10px; background:var(--off); color:var(--text); font-size:1rem; cursor:pointer}
   .dpad button:active{background:var(--accent)}
   @media (min-width:760px){ .dpad{display:none} }
+  #logPopup{display:none; position:absolute; inset:0; z-index:30; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:12px; border-radius:14px}
+  #logPopup.show{display:flex}
+  #logCard{background:var(--panel); border:2px solid var(--accent); border-radius:12px; padding:12px 14px; width:100%; max-width:460px}
+  #logHead{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:700; color:var(--accent); font-size:.9rem}
+  #logClose{border:none; background:var(--off); color:var(--text); border-radius:50%; width:26px; height:26px; cursor:pointer}
+  #logTable{border-collapse:collapse; width:100%; font-size:.8rem}
+  #logTable td,#logTable th{border:1px solid var(--wire); padding:.3em .5em; text-align:center}
+  #logNote{font-size:.7rem; opacity:.65; margin:8px 0 0}
 </style>
 </head>
 <body>
 <div class="panel">
+  <div class="statrow">
+    <span><span id="clockIcon">🌅</span> <span id="clockLabel">Pagi</span> <small id="clockCountdown" style="opacity:.6">(ganti dlm 25s)</small></span>
+    <button id="logBtn" type="button" title="Catatan pengamatan rumah">📋 Catatan</button>
+  </div>
+
   <div id="mapCanvasSlot"></div>
+  <div id="toast">&nbsp;</div>
+
   <div class="dpad">
     <div></div><button id="btnUp">▲</button><div></div>
     <button id="btnLeft">◀</button><div></div><button id="btnRight">▶</button>
     <div></div><button id="btnDown">▼</button><div></div>
   </div>
+
+  <div id="logPopup" role="dialog" aria-modal="true" aria-label="Catatan pengamatan rumah">
+    <div id="logCard">
+      <div id="logHead"><span>📋 Catatan Pengamatan Rumah</span><button id="logClose" type="button" aria-label="Tutup">✕</button></div>
+      <table id="logTable"></table>
+      <p id="logNote">Dekati rumah target di tiap waktu untuk mengisi catatan.</p>
+    </div>
+  </div>
 </div>
+
+<script>
+  // Popup catatan: buka lewat tombol, tutup lewat ✕, klik latar gelap, atau Esc.
+  (function(){
+    var popup = document.getElementById('logPopup');
+    function setOpen(o){ popup.classList.toggle('show', o); }
+    document.getElementById('logBtn').addEventListener('click', function(){ setOpen(!popup.classList.contains('show')); });
+    document.getElementById('logClose').addEventListener('click', function(){ setOpen(false); });
+    popup.addEventListener('click', function(e){ if (e.target === popup) setOpen(false); });
+    window.addEventListener('keydown', function(e){ if (e.key === 'Escape') setOpen(false); });
+  })();
+</script>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
