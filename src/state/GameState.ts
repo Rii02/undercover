@@ -42,3 +42,9 @@ export class GameState {
 export function dist(x1: number, y1: number, x2: number, y2: number): number {
   return Math.hypot(x1 - x2, y1 - y2);
 }
+
+export function dirFromDelta(dx: number, dy: number): Direction | null {
+  if (Math.abs(dx) > Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+  if (dy !== 0) return dy < 0 ? 'up' : 'down';
+  return null;
+}

@@ -18,7 +18,14 @@
   .dpad{display:grid; grid-template-columns:repeat(3,48px); grid-template-rows:repeat(3,48px); gap:4px; justify-content:center; margin-top:8px}
   .dpad button{border:none; border-radius:10px; background:var(--off); color:var(--text); font-size:1rem; cursor:pointer}
   .dpad button:active{background:var(--accent)}
-  @media (min-width:760px){ .dpad{display:none} }
+  .actBtn{width:100%; margin-top:8px; border:none; border-radius:10px; padding:10px; font-weight:700; cursor:pointer; background:var(--accent); color:#2a1900}
+  .actBtn:disabled{opacity:.35; cursor:not-allowed}
+  @media (min-width:760px){ .dpad,.actBtn{display:none} }
+  #dialogBox{display:none; position:absolute; left:12px; right:12px; bottom:12px; z-index:20; background:var(--panel); border:3px solid var(--accent); border-radius:14px; padding:14px 16px; box-shadow:0 8px 26px rgba(0,0,0,.5)}
+  #dialogBox.show{display:block}
+  #dialogName{font-weight:700; color:var(--accent); margin-bottom:6px}
+  #dialogText{line-height:1.5; min-height:3em; cursor:pointer}
+  #dialogHint{font-size:.75rem; opacity:.7; text-align:right; margin-top:6px}
   #logPopup{display:none; position:absolute; inset:0; z-index:30; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:12px; border-radius:14px}
   #logPopup.show{display:flex}
   #logCard{background:var(--panel); border:2px solid var(--accent); border-radius:12px; padding:12px 14px; width:100%; max-width:460px}
@@ -39,10 +46,17 @@
   <div id="mapCanvasSlot"></div>
   <div id="toast">&nbsp;</div>
 
+  <button class="actBtn" id="talkBtn" disabled>🗣️ Ajak Bicara (E)</button>
   <div class="dpad">
     <div></div><button id="btnUp">▲</button><div></div>
     <button id="btnLeft">◀</button><div></div><button id="btnRight">▶</button>
     <div></div><button id="btnDown">▼</button><div></div>
+  </div>
+
+  <div id="dialogBox">
+    <div id="dialogName">Nama NPC</div>
+    <div id="dialogText">...</div>
+    <div id="dialogHint">tekan E / ketuk untuk lanjut ▸</div>
   </div>
 
   <div id="logPopup" role="dialog" aria-modal="true" aria-label="Catatan pengamatan rumah">

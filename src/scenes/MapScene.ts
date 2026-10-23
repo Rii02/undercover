@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { GameState, Direction, TIME_INTERVAL_MS, dist } from '../state/GameState';
+import { GameState, Direction, TIME_INTERVAL_MS, dist, dirFromDelta } from '../state/GameState';
+import { NpcConfig } from '../state/Chapters';
 import { Hud } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP } from '../state/Sprites';
 
@@ -16,9 +17,18 @@ const LAYER_EXTRA = 'Tambahan';        // hiasan & overlay -> digambar DI ATAS k
 
 const CAMERA_ZOOM = 1.5;
 const PLAYER_SPEED = 180;              // px per detik
-const NEAR_HOUSE_RADIUS = 50;          // jarak ke tepi rumah agar pengamatan tercatat
+const NEAR_HOUSE_RADIUS = 50;
+const TALK_RADIUS = 44;               // jarak maksimal untuk ngobrol dengan warga          // jarak ke tepi rumah agar pengamatan tercatat
 
-/** Peta dunia: pemain berjalan, jam berganti tiap 25 detik, dekati rumah target untuk mencatat statusnya. */
+/** Peta dunia: pemain berjalan, jam berganti, rumah target diamati, dan warga bisa diajak ngobrol. */
+interface Npc {
+  cfg: NpcConfig;
+  sprite: Phaser.GameObjects.Sprite;
+  label: Phaser.GameObjects.Text;
+  /** Indeks baris obrolan yang sedang tampil. */
+  line: number;
+}
+
 export class MapScene extends Phaser.Scene {
   private state!: GameState;
   private infraLayer: Phaser.Tilemaps.TilemapLayer | null = null;
@@ -27,6 +37,8 @@ export class MapScene extends Phaser.Scene {
   private walkFrame: 0 | 1 = 0;
   private nextStepAt = 0;
   private nearHouseNow = false;
+  private npcs: Npc[] = [];
+  private dialogueNpc: Npc | null = null;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private pad: Record<Direction, boolean> = { up: false, down: false, left: false, right: false };
@@ -57,6 +69,8 @@ export class MapScene extends Phaser.Scene {
       fontSize: '9px', color: '#ffffff', backgroundColor: '#000000aa', padding: { x: 3, y: 2 }
     }).setOrigin(0.5, 1).setDepth(7);
 
+    this.spawnNpcs();
+
     // ---- pemain ----
     this.player = this.add.sprite(cfg.spawn.x, cfg.spawn.y, 'sheet', 0)
       .setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
@@ -71,6 +85,9 @@ export class MapScene extends Phaser.Scene {
     this.bindInput();
 
     // ---- jam & HUD ----
+    Hud.hideDialogue();
+    Hud.talkBtn.onclick = () => this.handleInteract();
+    Hud.dialogText.onclick = () => this.advanceDialogue();
     Hud.updateClock(this.state);
     Hud.renderLog(this.state);
     this.time.addEvent({
@@ -88,6 +105,7 @@ export class MapScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     this.movePlayer(delta);
     this.checkHouse();
+    Hud.talkBtn.disabled = !this.nearestNpc() || !!this.dialogueNpc;
   }
 
   // ---------- input ----------
@@ -95,6 +113,7 @@ export class MapScene extends Phaser.Scene {
     const kb = this.input.keyboard!;
     this.cursors = kb.createCursorKeys();
     this.wasd = kb.addKeys('W,A,S,D') as Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
+    kb.on('keydown-E', (e: KeyboardEvent) => { if (!e.repeat) this.handleInteract(); });
 
     // Tombol arah layar sentuh (di index.html)
     const bindings: Array<[string, Direction]> = [
@@ -121,6 +140,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   private movePlayer(delta: number): void {
+    if (this.dialogueNpc) return;   // gerakan dikunci selama ngobrol
     const left = this.cursors.left.isDown || this.wasd.A.isDown || this.pad.left;
     const right = this.cursors.right.isDown || this.wasd.D.isDown || this.pad.right;
     const up = this.cursors.up.isDown || this.wasd.W.isDown || this.pad.up;
@@ -183,4 +203,59 @@ export class MapScene extends Phaser.Scene {
       Hud.setToast(`📋 Slot ${this.state.currentSlot} sudah dicatat. Tunggu pergantian waktu.`, '#f5a623');
     }
   }
+
+  // ---------- warga ----------
+  private spawnNpcs(): void {
+    for (const cfg of this.state.chapter.npcs) {
+      const { frame } = charFrame(cfg.charKey, 'down', 0);
+      const sprite = this.add.sprite(cfg.x, cfg.y, 'sheet', frame).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
+      const label = this.add.text(cfg.x, cfg.y + 10, cfg.name, { fontSize: '9px', color: '#eef2f7', fontFamily: 'monospace' })
+        .setOrigin(0.5, 0).setDepth(3);
+      this.npcs.push({ cfg, sprite, label, line: 0 });
+    }
+  }
+
+  private nearestNpc(): Npc | null {
+    let best: Npc | null = null, bestD = TALK_RADIUS;
+    for (const n of this.npcs) {
+      const d = dist(this.player.x, this.player.y, n.cfg.x, n.cfg.y);
+      if (d < bestD) { bestD = d; best = n; }
+    }
+    return best;
+  }
+
+  // ---------- dialog ----------
+  /** Tombol E / tombol "Ajak Bicara": mulai obrolan, atau lanjut ke baris berikutnya kalau dialog sudah terbuka. */
+  private handleInteract(): void {
+    if (this.dialogueNpc) { this.advanceDialogue(); return; }
+    const npc = this.nearestNpc();
+    if (!npc) return;
+    this.dialogueNpc = npc;
+    npc.line = 0;   // tiap ngobrol diputar dari awal
+    // NPC menghadap pemain
+    const face = dirFromDelta(this.player.x - npc.cfg.x, this.player.y - npc.cfg.y);
+    if (face) {
+      const { frame, flipX } = charFrame(npc.cfg.charKey, face, 0);
+      npc.sprite.setFrame(frame).setFlipX(flipX);
+    }
+    this.showLine(npc);
+  }
+
+  private showLine(npc: Npc): void {
+    const line = npc.cfg.conversation[npc.line];
+    Hud.showDialogue(line.who === 'Aku' ? '🧑 Aku' : npc.cfg.name, line.text);
+  }
+
+  private advanceDialogue(): void {
+    const npc = this.dialogueNpc;
+    if (!npc) return;
+    if (npc.line < npc.cfg.conversation.length - 1) {
+      npc.line++;
+      this.showLine(npc);
+      return;
+    }
+    this.dialogueNpc = null;   // obrolan habis -> tutup
+    Hud.hideDialogue();
+  }
 }
+

@@ -9,10 +9,26 @@ export const Hud = {
   clockCountdown: $('clockCountdown'),
   toast: $('toast'),
   logTable: $<HTMLTableElement>('logTable'),
+  talkBtn: $<HTMLButtonElement>('talkBtn'),
+
+  // ---- Kotak dialog (ala RPG) ----
+  dialogBox: $('dialogBox'),
+  dialogName: $('dialogName'),
+  dialogText: $('dialogText'),
 
   setToast(text: string, color = '#f5a623'): void {
     this.toast.textContent = text;
     this.toast.style.color = color;
+  },
+
+  /** Tampilkan satu baris obrolan + petunjuk "tekan E / ketuk buat lanjut". */
+  showDialogue(name: string, text: string): void {
+    this.dialogName.textContent = name;
+    this.dialogText.textContent = text;
+    this.dialogBox.classList.add('show');
+  },
+  hideDialogue(): void {
+    this.dialogBox.classList.remove('show');
   },
 
   updateClock(state: GameState): void {
