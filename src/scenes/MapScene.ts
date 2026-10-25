@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GameState, Direction, TIME_INTERVAL_MS, dist, dirFromDelta } from '../state/GameState';
-import { NpcConfig } from '../state/Chapters';
+import { NpcConfig, DialogueLine } from '../state/Chapters';
 import { Hud } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP } from '../state/Sprites';
 
@@ -39,6 +39,12 @@ export class MapScene extends Phaser.Scene {
   private nearHouseNow = false;
   private npcs: Npc[] = [];
   private dialogueNpc: Npc | null = null;
+  // ---- dialog cerita Bos <-> Aku ----
+  private storyActive = false;
+  private storyLines: DialogueLine[] = [];
+  private storyIndex = 0;
+  private storyCta = '';
+  private storyOnDone: (() => void) | null = null;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private pad: Record<Direction, boolean> = { up: false, down: false, left: false, right: false };
@@ -87,7 +93,8 @@ export class MapScene extends Phaser.Scene {
     // ---- jam & HUD ----
     Hud.hideDialogue();
     Hud.talkBtn.onclick = () => this.handleInteract();
-    Hud.dialogText.onclick = () => this.advanceDialogue();
+    Hud.dialogText.onclick = () => this.advance();
+    Hud.dialogCtaBtn.onclick = () => this.advanceStory();
     Hud.updateClock(this.state);
     Hud.renderLog(this.state);
     this.time.addEvent({
@@ -99,13 +106,13 @@ export class MapScene extends Phaser.Scene {
       }
     });
     this.time.addEvent({ delay: 1000, loop: true, callback: () => Hud.updateClockCountdown(this.state) });
-    Hud.setToast(`🎯 ${this.state.chapter.objective}`);
+    this.showBriefing();
   }
 
   update(_time: number, delta: number): void {
     this.movePlayer(delta);
     this.checkHouse();
-    Hud.talkBtn.disabled = !this.nearestNpc() || !!this.dialogueNpc;
+    Hud.talkBtn.disabled = !this.nearestNpc() || !!this.dialogueNpc || this.storyActive;
   }
 
   // ---------- input ----------
@@ -140,7 +147,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   private movePlayer(delta: number): void {
-    if (this.dialogueNpc) return;   // gerakan dikunci selama ngobrol
+    if (this.dialogueNpc || this.storyActive) return;   // gerakan dikunci selama dialog
     const left = this.cursors.left.isDown || this.wasd.A.isDown || this.pad.left;
     const right = this.cursors.right.isDown || this.wasd.D.isDown || this.pad.right;
     const up = this.cursors.up.isDown || this.wasd.W.isDown || this.pad.up;
@@ -227,6 +234,7 @@ export class MapScene extends Phaser.Scene {
   // ---------- dialog ----------
   /** Tombol E / tombol "Ajak Bicara": mulai obrolan, atau lanjut ke baris berikutnya kalau dialog sudah terbuka. */
   private handleInteract(): void {
+    if (this.storyActive) { this.advanceStory(); return; }
     if (this.dialogueNpc) { this.advanceDialogue(); return; }
     const npc = this.nearestNpc();
     if (!npc) return;
@@ -256,6 +264,52 @@ export class MapScene extends Phaser.Scene {
     }
     this.dialogueNpc = null;   // obrolan habis -> tutup
     Hud.hideDialogue();
+  }
+
+  /** Ketuk kotak dialog: lanjutkan cerita atau obrolan, mana yang sedang aktif. */
+  private advance(): void {
+    if (this.storyActive) this.advanceStory();
+    else this.advanceDialogue();
+  }
+
+  // ---------- dialog cerita Bos <-> Aku ----------
+  /** Putar obrolan cerita baris demi baris. Jam desa dihentikan selama cerita berjalan. */
+  private playStory(lines: DialogueLine[], ctaLabel: string, onDone: () => void): void {
+    this.storyLines = lines;
+    this.storyIndex = 0;
+    this.storyCta = ctaLabel;
+    this.storyActive = true;
+    this.storyOnDone = onDone;
+    this.time.paused = true;
+    this.showStoryLine();
+  }
+
+  private showStoryLine(): void {
+    const isLast = this.storyIndex === this.storyLines.length - 1;
+    Hud.showStoryLine(this.storyLines[this.storyIndex], isLast, this.storyCta);
+  }
+
+  private advanceStory(): void {
+    if (!this.storyActive) return;
+    if (this.storyIndex < this.storyLines.length - 1) {
+      this.storyIndex++;
+      this.showStoryLine();
+      return;
+    }
+    this.storyActive = false;
+    this.time.paused = false;
+    Hud.hideStoryLine();
+    const done = this.storyOnDone;
+    this.storyOnDone = null;
+    done?.();
+  }
+
+  /** Briefing awal chapter: telepon Bos, lalu tombol "Mulai Misi" menampilkan tujuan. */
+  private showBriefing(): void {
+    this.playStory(this.state.chapter.briefingLog, '▶ Mulai Misi', () => {
+      this.state.nextTimeChange = Date.now() + TIME_INTERVAL_MS;   // jam mulai dari awal setelah briefing
+      Hud.setToast(`🎯 ${this.state.chapter.objective}`, '#00d9a3');
+    });
   }
 }
 

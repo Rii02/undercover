@@ -1,4 +1,9 @@
 import { GameState, SLOT_ICON, SLOTS } from './GameState';
+import { DialogueLine } from './Chapters';
+
+const STORY_SPEAKER: Record<DialogueLine['speaker'], string> = {
+  Bos: '📞 Bos', Aku: '🧑 Aku', Narasi: '📖 Narasi'
+};
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -15,6 +20,8 @@ export const Hud = {
   dialogBox: $('dialogBox'),
   dialogName: $('dialogName'),
   dialogText: $('dialogText'),
+  dialogHint: $('dialogHint'),
+  dialogCtaBtn: $<HTMLButtonElement>('dialogCtaBtn'),
 
   setToast(text: string, color = '#f5a623'): void {
     this.toast.textContent = text;
@@ -25,10 +32,26 @@ export const Hud = {
   showDialogue(name: string, text: string): void {
     this.dialogName.textContent = name;
     this.dialogText.textContent = text;
+    this.dialogCtaBtn.style.display = 'none';
+    this.dialogHint.style.display = 'block';
     this.dialogBox.classList.add('show');
   },
   hideDialogue(): void {
     this.dialogBox.classList.remove('show');
+  },
+
+  /** Satu baris cerita Bos <-> Aku. Baris terakhir menukar petunjuk "lanjut" jadi tombol aksi besar (ctaLabel). */
+  showStoryLine(line: DialogueLine, isLast: boolean, ctaLabel: string): void {
+    this.dialogName.textContent = STORY_SPEAKER[line.speaker];
+    this.dialogText.textContent = line.text;
+    this.dialogHint.style.display = isLast ? 'none' : 'block';
+    this.dialogCtaBtn.style.display = isLast ? 'block' : 'none';
+    this.dialogCtaBtn.textContent = ctaLabel;
+    this.dialogBox.classList.add('show');
+  },
+  hideStoryLine(): void {
+    this.dialogBox.classList.remove('show');
+    this.dialogCtaBtn.style.display = 'none';
   },
 
   updateClock(state: GameState): void {

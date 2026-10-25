@@ -17,6 +17,12 @@ export interface NpcConfig {
   conversation: NpcLine[];
 }
 
+/** Satu baris cerita. 'Narasi' = teks narator. */
+export interface DialogueLine {
+  speaker: 'Bos' | 'Aku' | 'Narasi';
+  text: string;
+}
+
 /** Peta Tiled milik satu chapter + titik-titik pentingnya (px dunia). */
 export interface MapConfig {
   /** Key Phaser untuk tilemap ini (di-load di BootScene). */
@@ -35,13 +41,18 @@ export interface ChapterConfig {
   /** Tujuan chapter, ditampilkan sebagai toast saat game mulai. */
   objective: string;
   suspectName: string;
+  /** Pembukaan cerita (narasi + telepon Bos), ditampilkan sebelum misi dimulai. */
+  briefingLog: DialogueLine[];
   map: MapConfig;
   /** Jadwal rumah target: kapan ada orang / kosong. */
   schedulePattern: Record<TimeSlot, HouseStatus>;
   npcs: NpcConfig[];
 }
 
-// ---- helper penulisan obrolan biar ringkas ----
+// ---- helper penulisan dialog biar ringkas ----
+const bos = (text: string): DialogueLine => ({ speaker: 'Bos', text });
+const aku = (text: string): DialogueLine => ({ speaker: 'Aku', text });
+const narasi = (text: string): DialogueLine => ({ speaker: 'Narasi', text });
 const me = (text: string): NpcLine => ({ who: 'Aku', text });
 const them = (text: string): NpcLine => ({ who: 'NPC', text });
 
@@ -51,6 +62,12 @@ export const CHAPTERS: ChapterConfig[] = [
     title: 'Jejak Pertama',
     objective: 'Cari tahu kapan rumah Pak Herman kosong. Dekati rumahnya di tiap waktu dan catat hasilnya.',
     suspectName: 'Pak Herman',
+    briefingLog: [
+      narasi('Pagi di desa. Gerobak bakso sudah siap, panci mengepul. Telepon dari Bos masuk.'),
+      bos('Bank melaporkan empat belas transfer kecil dalam sebulan. Nominalnya sengaja dibuat receh supaya tidak kelihatan.'),
+      aku('Semuanya dari satu rekening?'),
+      bos('Atas nama Herman. Rumahnya di ujung jalan. Tapi belum tentu dia pelakunya. Amati dulu, jangan buru-buru.')
+    ],
     map: {
       key: 'map1', file: 'assets/maps/ch1.json',
       spawn: { x: 440, y: 408 },
