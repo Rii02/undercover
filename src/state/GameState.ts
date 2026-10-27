@@ -18,6 +18,8 @@ function emptyLog(): Record<TimeSlot, HouseStatus | null> {
 export class GameState {
   chapterIndex = 0;
   slotIdx = 0;
+  /** Kecurigaan warga 0..100: naik kalau pemain nongkrong dekat rumah target, turun kalau menjauh. */
+  suspicion = 0;
   observationLog: Record<TimeSlot, HouseStatus | null> = emptyLog();
   nextTimeChange = Date.now() + TIME_INTERVAL_MS;
 
@@ -36,6 +38,11 @@ export class GameState {
     if (this.observationLog[slot] !== null) return false;
     this.observationLog[slot] = this.currentStatus;
     return true;
+  }
+
+  /** Dipanggil dari aksi "Coba Masuk": selalu menimpa catatan slot saat ini (beda dengan pengamatan pasif di peta). */
+  setObservation(): void {
+    this.observationLog[this.currentSlot] = this.currentStatus;
   }
 }
 

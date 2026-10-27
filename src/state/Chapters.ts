@@ -30,6 +30,8 @@ export interface MapConfig {
   /** Path file peta (relatif ke folder public/). */
   file: string;
   spawn: { x: number; y: number };
+  /** Titik di DEPAN pintu target (di luar bangunan). */
+  door: { x: number; y: number };
   /** Persegi bangunan rumah target. */
   house: { x: number; y: number; w: number; h: number };
 }
@@ -47,6 +49,12 @@ export interface ChapterConfig {
   /** Jadwal rumah target: kapan ada orang / kosong. */
   schedulePattern: Record<TimeSlot, HouseStatus>;
   npcs: NpcConfig[];
+  /** Peta Tiled interior chapter ini (key & file, path relatif ke folder public/). */
+  interiorMap: { key: string; file: string };
+  /** Judul di header interior: "Di Dalam {interiorTitle}". */
+  interiorTitle: string;
+  /** Narasi yang tampil sebagai petunjuk selama pemain menjelajah interior. */
+  interiorIntro: string;
 }
 
 // ---- helper penulisan dialog biar ringkas ----
@@ -71,9 +79,13 @@ export const CHAPTERS: ChapterConfig[] = [
     map: {
       key: 'map1', file: 'assets/maps/ch1.json',
       spawn: { x: 440, y: 408 },
-      house: { x: 800, y: 192, w: 112, h: 128 }
+      house: { x: 800, y: 192, w: 112, h: 128 },
+      door: { x: 856, y: 328 }
     },
     schedulePattern: { Pagi: 'ada', Siang: 'ada', Sore: 'kosong', Malam: 'ada' },
+    interiorMap: { key: 'int1', file: 'assets/maps/int_ch1_rumah_herman.json' },
+    interiorTitle: 'Rumah Pak Herman',
+    interiorIntro: 'Pintu samping tidak terkunci rapat. Ruang kerja sempit, bau kopi lama. Satu laptop tua menyala, kipasnya berputar kencang. “Rumah kosong, tapi kipasnya kerja keras. Rina benar.”',
     npcs: [
       {
         charKey: 'C', name: 'Bu Sari', x: 696, y: 344, speed: 1.0,

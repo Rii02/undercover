@@ -18,7 +18,8 @@ const LAYER_EXTRA = 'Tambahan';        // hiasan & overlay -> digambar DI ATAS k
 const CAMERA_ZOOM = 1.5;
 const PLAYER_SPEED = 180;              // px per detik
 const NEAR_HOUSE_RADIUS = 50;
-const TALK_RADIUS = 44;               // jarak maksimal untuk ngobrol dengan warga          // jarak ke tepi rumah agar pengamatan tercatat
+const TALK_RADIUS = 44;
+const DOOR_RADIUS = 34;               // jarak maksimal ke pintu agar "Coba Masuk" aktif               // jarak maksimal untuk ngobrol dengan warga          // jarak ke tepi rumah agar pengamatan tercatat
 
 /** Peta dunia: pemain berjalan, jam berganti, rumah target diamati, dan warga bisa diajak ngobrol. */
 interface Npc {
@@ -93,6 +94,8 @@ export class MapScene extends Phaser.Scene {
     // ---- jam & HUD ----
     Hud.hideDialogue();
     Hud.talkBtn.onclick = () => this.handleInteract();
+    Hud.enterBtn.onclick = () => this.tryEnter();
+    this.events.on(Phaser.Scenes.Events.RESUME, () => { document.body.classList.remove('inside'); Hud.renderLog(this.state); });
     Hud.dialogText.onclick = () => this.advance();
     Hud.dialogCtaBtn.onclick = () => this.advanceStory();
     Hud.updateClock(this.state);
@@ -112,7 +115,10 @@ export class MapScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     this.movePlayer(delta);
     this.checkHouse();
-    Hud.talkBtn.disabled = !this.nearestNpc() || !!this.dialogueNpc || this.storyActive;
+    this.updateSuspicion();
+    const busy = !!this.dialogueNpc || this.storyActive;
+    Hud.talkBtn.disabled = !this.nearestNpc() || busy;
+    Hud.enterBtn.disabled = !this.nearDoor() || busy;
   }
 
   // ---------- input ----------
@@ -120,7 +126,10 @@ export class MapScene extends Phaser.Scene {
     const kb = this.input.keyboard!;
     this.cursors = kb.createCursorKeys();
     this.wasd = kb.addKeys('W,A,S,D') as Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
-    kb.on('keydown-E', (e: KeyboardEvent) => { if (!e.repeat) this.handleInteract(); });
+    // E lewat window (bukan Phaser): Scene yang di-pause tak menerima event, jadi E yang menutup interior tidak ikut "bocor" ke peta.
+    const onKey = (e: KeyboardEvent) => { if (e.key.toLowerCase() === 'e' && !e.repeat) this.handleInteract(); };
+    window.addEventListener('keydown', onKey);
+    this.events.once('shutdown', () => window.removeEventListener('keydown', onKey));
 
     // Tombol arah layar sentuh (di index.html)
     const bindings: Array<[string, Direction]> = [
@@ -237,7 +246,10 @@ export class MapScene extends Phaser.Scene {
     if (this.storyActive) { this.advanceStory(); return; }
     if (this.dialogueNpc) { this.advanceDialogue(); return; }
     const npc = this.nearestNpc();
-    if (!npc) return;
+    if (!npc) {
+      if (this.nearDoor()) this.tryEnter();
+      return;
+    }
     this.dialogueNpc = npc;
     npc.line = 0;   // tiap ngobrol diputar dari awal
     // NPC menghadap pemain
@@ -310,6 +322,43 @@ export class MapScene extends Phaser.Scene {
       this.state.nextTimeChange = Date.now() + TIME_INTERVAL_MS;   // jam mulai dari awal setelah briefing
       Hud.setToast(`🎯 ${this.state.chapter.objective}`, '#00d9a3');
     });
+  }
+
+  // ---------- kecurigaan warga ----------
+  /** Dekat rumah target = makin dicurigai; menjauh = pelan-pelan mereda. Penuh = diusir kembali ke titik awal. */
+  private updateSuspicion(): void {
+    if (this.nearHouse()) this.state.suspicion = Math.min(100, this.state.suspicion + 0.35);
+    else this.state.suspicion = Math.max(0, this.state.suspicion - 0.15);
+    Hud.updateSuspicion(this.state);
+    if (this.state.suspicion >= 100) {
+      Hud.setToast('🚨 Kamu terlalu lama nongkrong, warga curiga! Menjauh dulu...', '#ff6b6b');
+      this.state.suspicion = 0;
+      const sp = this.state.chapter.map.spawn;
+      this.player.x = sp.x; this.player.y = sp.y;
+    }
+  }
+
+  // ---------- masuk rumah ----------
+  private nearDoor(): boolean {
+    const d = this.state.chapter.map.door;
+    return dist(this.player.x, this.player.y, d.x, d.y) < DOOR_RADIUS;
+  }
+
+  /** "Coba Masuk": rumah kosong = menyelinap masuk (pindah ke InteriorScene); ada orang = ketahuan dan terusir. */
+  private tryEnter(): void {
+    if (!this.nearDoor() || this.dialogueNpc || this.storyActive) return;
+    this.state.setObservation();
+    Hud.renderLog(this.state);
+    if (this.state.currentStatus === 'kosong') {
+      Hud.setToast('✅ Rumah kosong, kamu berhasil menyelinap masuk!', '#00d9a3');
+      this.scene.pause();
+      this.scene.launch('Interior');
+    } else {
+      Hud.setToast('❌ KETAHUAN! Pemilik rumah memergokimu di depan pintu. Kabur!', '#ff6b6b');
+      this.state.suspicion = 0;
+      const sp = this.state.chapter.map.spawn;
+      this.player.x = sp.x; this.player.y = sp.y;
+    }
   }
 }
 

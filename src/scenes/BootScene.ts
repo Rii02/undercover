@@ -13,13 +13,17 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet('sheet', 'assets/characters/karakter_sheet.png', { frameWidth: CHAR_W, frameHeight: CHAR_H });
 
     // Peta Tiled tiap chapter (key & file didefinisikan di CHAPTERS[i].map).
-    for (const ch of CHAPTERS) this.load.tilemapTiledJSON(ch.map.key, ch.map.file);
+    for (const ch of CHAPTERS) {
+      this.load.tilemapTiledJSON(ch.map.key, ch.map.file);
+      this.load.tilemapTiledJSON(ch.interiorMap.key, ch.interiorMap.file);   // peta interior
+    }
 
     // Tileset dipakai bersama oleh semua peta. Nama di Tiled dipetakan ke key ini lewat TILESETS di MapScene.ts.
     this.load.image('tiles_city', 'assets/tilesets/city.png');
     this.load.image('tiles_tiny', 'assets/tilesets/tiny-town.png');
     this.load.image('tiles_town', 'assets/tilesets/buildings-country_town_clean.png');
     this.load.image('tiles_overlay', 'assets/tilesets/overlay.png');
+    this.load.image('tiles_interior', 'assets/tilesets/interior.png');   // tileset 'interior-kustom', hanya dipakai peta interior
 
     // Kalau ada file yang gagal dimuat (path salah / typo), tampilkan jelas di Console.
     this.load.on('loaderror', (file: Phaser.Loader.File) => {

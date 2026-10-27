@@ -13,8 +13,13 @@ export const Hud = {
   clockLabel: $('clockLabel'),
   clockCountdown: $('clockCountdown'),
   toast: $('toast'),
+  susBar: $<HTMLDivElement>('susBar'),
   logTable: $<HTMLTableElement>('logTable'),
   talkBtn: $<HTMLButtonElement>('talkBtn'),
+  enterBtn: $<HTMLButtonElement>('enterBtn'),
+  computerBtn: $<HTMLButtonElement>('computerBtn'),
+  interiorHint: $('interiorHint'),
+  interiorHeader: $('interiorHeader'),
 
   // ---- Kotak dialog (ala RPG) ----
   dialogBox: $('dialogBox'),
@@ -52,6 +57,10 @@ export const Hud = {
   hideStoryLine(): void {
     this.dialogBox.classList.remove('show');
     this.dialogCtaBtn.style.display = 'none';
+  },
+
+  updateSuspicion(state: GameState): void {
+    this.susBar.style.width = state.suspicion + '%';
   },
 
   updateClock(state: GameState): void {
