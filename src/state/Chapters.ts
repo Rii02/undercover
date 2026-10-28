@@ -23,6 +23,24 @@ export interface DialogueLine {
   text: string;
 }
 
+export interface EvidenceFile {
+  name: string;
+  lines: string[];
+  /** Opsional: kalau diisi, file manager menampilkan riwayat transaksi (tabel) saat berkas ini dibuka. */
+  transactions?: TransactionRow[];
+}
+
+/** Satu baris riwayat transaksi di berkas bukti (ditampilkan di file manager). */
+export interface TransactionRow {
+  tanggal: string;
+  keterangan: string;
+  dari: string;
+  ke: string;
+  /** Nominal dalam rupiah. */
+  jumlah: number;
+  status: string;
+}
+
 /** Peta Tiled milik satu chapter + titik-titik pentingnya (px dunia). */
 export interface MapConfig {
   /** Key Phaser untuk tilemap ini (di-load di BootScene). */
@@ -55,6 +73,14 @@ export interface ChapterConfig {
   interiorTitle: string;
   /** Narasi yang tampil sebagai petunjuk selama pemain menjelajah interior. */
   interiorIntro: string;
+  /** Level minigame hacking (lihat HackLevels.ts) yang dipakai chapter ini. */
+  hackLevel: number;
+  /** Narasi di terminal sebelum puzzle (boleh kosong). */
+  hackIntro: string[];
+  hackFailText: string;
+  hackSuccessText: string;
+  /** Berkas bukti yang dibuka di file manager setelah hacking berhasil. */
+  evidence: EvidenceFile[];
 }
 
 // ---- helper penulisan dialog biar ringkas ----
@@ -86,6 +112,26 @@ export const CHAPTERS: ChapterConfig[] = [
     interiorMap: { key: 'int1', file: 'assets/maps/int_ch1_rumah_herman.json' },
     interiorTitle: 'Rumah Pak Herman',
     interiorIntro: 'Pintu samping tidak terkunci rapat. Ruang kerja sempit, bau kopi lama. Satu laptop tua menyala, kipasnya berputar kencang. “Rumah kosong, tapi kipasnya kerja keras. Rina benar.”',
+    hackLevel: 1,
+    hackIntro: ['Layar: folder “keuangan” berikon gembok. Jendela kecil di pojok: Pintu Ganda — proteksi transaksi.'],
+    hackFailText: 'AKSES DITOLAK. Percobaan gagal dicatat. Susun ulang gerbangnya.',
+    hackSuccessText: 'Lampu panel berubah OPEN, folder terbuka, kipas laptop melambat.',
+    evidence: [
+      {
+        name: 'transaksi_0312.csv',
+        lines: ['Seluruh dana berakhir di dompet digital atas nama “Melati S.”, bukan Pak Herman.'],
+        transactions: [
+          { tanggal: '04 Mar 09:12', keterangan: 'Transfer masuk – pembayaran kios', dari: 'CV Tani Makmur', ke: 'Rek. Pak Herman', jumlah: 4_500_000, status: 'Berhasil' },
+          { tanggal: '04 Mar 09:15', keterangan: 'Pindah dana otomatis', dari: 'Rek. Pak Herman', ke: 'Dompet Digital Melati S.', jumlah: 4_500_000, status: 'Berhasil' },
+          { tanggal: '06 Mar 13:40', keterangan: 'Transfer masuk – setoran mingguan', dari: 'UD Sumber Rejeki', ke: 'Rek. Pak Herman', jumlah: 2_750_000, status: 'Berhasil' },
+          { tanggal: '06 Mar 13:44', keterangan: 'Pindah dana otomatis', dari: 'Rek. Pak Herman', ke: 'Dompet Digital Melati S.', jumlah: 2_750_000, status: 'Berhasil' },
+          { tanggal: '09 Mar 20:05', keterangan: 'Transfer masuk – pelunasan', dari: 'Toko Berkah', ke: 'Rek. Pak Herman', jumlah: 6_200_000, status: 'Berhasil' },
+          { tanggal: '09 Mar 20:09', keterangan: 'Pindah dana otomatis', dari: 'Rek. Pak Herman', ke: 'Dompet Digital Melati S.', jumlah: 6_200_000, status: 'Berhasil' },
+          { tanggal: '12 Mar 02:03', keterangan: 'Transfer keluar (sesi jarak jauh)', dari: 'Rek. Pak Herman', ke: 'Dompet Digital Melati S.', jumlah: 3_000_000, status: 'Berhasil' }
+        ]
+      },
+      { name: 'remote_session.log', lines: ['Laptop ini dikendalikan dari jauh setiap malam sekitar pukul 02.00.'] }
+    ],
     npcs: [
       {
         charKey: 'C', name: 'Bu Sari', x: 696, y: 344, speed: 1.0,

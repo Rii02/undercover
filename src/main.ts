@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { MapScene } from './scenes/MapScene';
 import { InteriorScene } from './scenes/InteriorScene';
+import { HackingScene } from './scenes/HackingScene';
 import { GameState } from './state/GameState';
 
 const game = new Phaser.Game({
@@ -12,7 +13,7 @@ const game = new Phaser.Game({
   backgroundColor: '#0a0e1a',
   pixelArt: true,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  scene: [BootScene, MapScene, InteriorScene]
+  scene: [BootScene, MapScene, InteriorScene, HackingScene]
 });
 
 // State global dipasang di registry supaya semua Scene bisa mengaksesnya.

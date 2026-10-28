@@ -245,8 +245,9 @@ export class InteriorScene extends Phaser.Scene {
 
   private tryOpenHacking(): void {
     if (!this.nearest(this.hacks, HACK_RADIUS)) return;
-    // Minigame membobol komputer ditambahkan di versi berikutnya.
-    Hud.setToast('💻 Komputernya menyala, tapi kamu belum bisa membobolnya.', '#f5a623');
+    this.scene.pause();
+    // Data eksplisit: Phaser mempertahankan data lama jika launch() tanpa data.
+    this.scene.launch('Hacking', { mode: 'story' });
   }
 
   private exitHouse(): void {

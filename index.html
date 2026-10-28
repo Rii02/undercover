@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Undercover: Kasus Kejahatan Siber</title>
 <style>
-  :root{ --bg:#0a0e1a; --panel:#161d2e; --accent:#f5a623; --off:#3d4759; --wire:#5b6b7f; --text:#eef2f7; }
+  :root{ --bg:#0a0e1a; --panel:#161d2e; --accent:#f5a623; --off:#3d4759; --wire:#5b6b7f; --text:#eef2f7; --term-bg:#001208; --term-text:#3dff6a; --term-dim:#1e8f3e; }
   *{box-sizing:border-box; touch-action:manipulation}
   html,body{height:100%; margin:0}
   body{background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:8px; display:flex; justify-content:center}
@@ -44,6 +44,82 @@
   #logTable{border-collapse:collapse; width:100%; font-size:.8rem}
   #logTable td,#logTable th{border:1px solid var(--wire); padding:.3em .5em; text-align:center}
   #logNote{font-size:.7rem; opacity:.65; margin:8px 0 0}
+  /* ==== File manager bukti (tampilan file manager biasa, terang) ==== */
+  #fmOverlay{display:none; position:fixed; inset:0; z-index:900; background:rgba(15,18,28,.6); align-items:center; justify-content:center; padding:12px}
+  #fmOverlay.show{display:flex}
+  #fmWindow{display:flex; flex-direction:column; width:min(1000px,100%); height:min(680px,92dvh); background:#fff; color:#1f2430; border:1px solid #c5c9d3; border-radius:10px; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif; box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  #fmTitleBar{display:flex; align-items:center; gap:8px; padding:9px 12px; background:#e9ebf0; border-bottom:1px solid #d3d6de; font-size:.9rem; font-weight:600}
+  #fmTitleBar .dot{width:12px; height:12px; border-radius:50%; border:none; padding:0; display:inline-block}
+  #fmTitleBar .r{background:#ff5f57; cursor:pointer} #fmTitleBar .y{background:#febc2e} #fmTitleBar .g{background:#28c840}
+  #fmTitle{flex:1; text-align:center; margin-right:44px}
+  #fmToolbar{display:flex; align-items:center; gap:8px; padding:8px 12px; background:#f6f7f9; border-bottom:1px solid #e0e3ea}
+  #fmToolbar .nav{color:#9aa0ad; font-size:1.1rem; letter-spacing:6px}
+  #fmPath{flex:1; background:#fff; border:1px solid #d3d6de; border-radius:6px; padding:6px 10px; font-size:.85rem; color:#4a5060; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  #fmListWrap{flex:0 0 auto; max-height:38%; overflow-y:auto; border-bottom:1px solid #e0e3ea}
+  #fmTable{width:100%; border-collapse:collapse; font-size:.92rem}
+  #fmTable th{position:sticky; top:0; background:#f6f7f9; text-align:left; font-weight:600; font-size:.8rem; color:#5a6070; padding:7px 14px; border-bottom:1px solid #e0e3ea}
+  #fmTable td{padding:9px 14px; border-bottom:1px solid #f0f1f5; white-space:nowrap}
+  #fmTable tr.fmRow{cursor:pointer}
+  #fmTable tr.fmRow:hover td{background:#eef4ff}
+  #fmTable tr.fmRow.sel td{background:#cfe2ff}
+  #fmTable td.nm{width:100%; font-weight:500} #fmTable td.nm .ic{margin-right:8px}
+  #fmTable td.sz,#fmTable th.sz{text-align:right}
+  #fmPreview{flex:1; overflow:auto; padding:16px 20px; font-size:.95rem; line-height:1.55; background:#fff}
+  #fmPreview .fmEmpty{color:#8a90a0; text-align:center; margin-top:8%}
+  #fmPreview h3{margin:0 0 2px; font-size:1.05rem}
+  #fmPreview .fmMeta{color:#8a90a0; font-size:.8rem; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #eceef3}
+  #fmPreview .fmNote{background:#fff8e6; border:1px solid #f1dfa6; border-radius:8px; padding:10px 12px; margin-bottom:12px}
+  #fmPreview .fmLine{margin:0 0 8px}
+  .fmTxTitle{font-weight:600; margin:4px 0 8px}
+  .fmTxWrap{overflow-x:auto; border:1px solid #dfe2ea; border-radius:8px}
+  table.fmTx{width:100%; border-collapse:collapse; font-size:.85rem}
+  table.fmTx th{background:#f3f5f9; text-align:left; font-weight:600; padding:8px 10px; border-bottom:1px solid #dfe2ea; white-space:nowrap}
+  table.fmTx td{padding:8px 10px; border-bottom:1px solid #eef0f5; vertical-align:top}
+  table.fmTx tr:nth-child(even) td{background:#fafbfd}
+  table.fmTx td.amt,table.fmTx th.amt{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums}
+  table.fmTx td.hl{color:#b3261e; font-weight:600}
+  .fmBadge{display:inline-block; padding:2px 8px; border-radius:999px; background:#e3f6ea; color:#17753a; font-size:.75rem; font-weight:600; white-space:nowrap}
+  .fmTxSum{display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 4px 0; font-size:.88rem; color:#4a5060}
+  #fmFoot{display:flex; align-items:center; gap:12px; padding:9px 14px; border-top:1px solid #e0e3ea; background:#f6f7f9}
+  #fmStatus{flex:1; font-size:.85rem; color:#5a6070}
+  #fmCloseBtn{border:none; border-radius:8px; padding:10px 18px; font:inherit; font-weight:600; font-size:.9rem; cursor:pointer; background:#2f6fed; color:#fff}
+  #fmCloseBtn:hover{background:#2459c8}
+  @media (max-width:640px){ #fmTable td.tp,#fmTable th.tp{display:none} #fmFoot{flex-direction:column; align-items:stretch} #fmToolbar .nav{display:none} }
+
+  /* ==== Hacking terminal view ==== */
+  #hackView{display:none; background:var(--term-bg); border:2px solid var(--term-dim); border-radius:10px; padding:12px; color:var(--term-text); font-family:'Courier New',monospace}
+  #hackView h2{margin:0 0 6px; font-size:.95rem}
+  .termline{font-size:.75rem; opacity:.85; margin:2px 0}
+  #circuit{background:#000d05; border:1px solid var(--term-dim); border-radius:6px; image-rendering:pixelated; max-width:100%; display:block; margin:0 auto}
+  .palette{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:8px}
+  .gate-chip{border:2px solid var(--term-text); border-radius:6px; padding:6px 12px; cursor:grab; font-weight:700; font-size:.8rem; background:#00220f; color:var(--term-text); user-select:none; touch-action:none; font-family:'Courier New',monospace}
+  .ghost{position:fixed; z-index:999; pointer-events:none; padding:6px 12px; border-radius:6px; background:#00220f; color:var(--term-text); border:2px solid var(--term-text); font-weight:700; font-size:.8rem; font-family:'Courier New',monospace}
+  table.tt{border-collapse:collapse; font-size:.72rem; margin-top:4px}
+  table.tt td, table.tt th{border:1px solid var(--term-dim); padding:3px 8px; text-align:center; color:var(--term-text)}
+  .controls2{display:flex; gap:8px; margin-top:10px}
+  .ctrl-btn2{flex:1; border:2px solid var(--term-text); border-radius:6px; padding:9px; cursor:pointer; font-weight:700; font-size:.8rem; background:#00220f; color:var(--term-text); font-family:'Courier New',monospace}
+  #hackStatus{min-height:1.3em; font-weight:700; text-align:center; font-size:.8rem; margin-top:8px}
+  #hackBody{display:flex; flex-direction:column; gap:8px}
+  /* Saat minigame hacking tampil, panel utama disembunyikan */
+  body.hacking .panel:not(#hackView){display:none}
+  @media (min-width:760px){
+    /* ---- Minigame hacking / simulasi: pakai hampir seluruh layar desktop ---- */
+    #hackView{min-height:calc(100dvh - 20px); padding:18px 28px}
+    #hackView h2{font-size:1.35rem; margin-bottom:10px}
+    #hackView .termline{font-size:.98rem; line-height:1.55; max-width:1400px}
+    #hackBody{flex-direction:row; align-items:flex-start; justify-content:center; gap:36px; margin-top:12px}
+    #hackCircuitCol{flex:0 0 auto}
+    #hackSideCol{flex:1 1 440px; min-width:340px; max-width:680px}
+    #circuit{image-rendering:auto; height:clamp(380px, calc(100dvh - 250px), 960px); width:auto; max-width:100%; aspect-ratio:360/400}
+    table.tt{width:100%; font-size:1.05rem}
+    table.tt td, table.tt th{padding:.45em 1em}
+    table.tt th small{font-weight:400; opacity:.8}
+    .palette{gap:12px; margin-top:16px}
+    .gate-chip{font-size:1.1rem; padding:12px 24px}
+    .controls2{margin-top:14px; gap:12px}
+    .ctrl-btn2{font-size:1.05rem; padding:14px}
+    #hackStatus{font-size:1.05rem; margin-top:12px; line-height:1.5}
+  }
 </style>
 </head>
 <body>
@@ -89,6 +165,56 @@
       <div id="logHead"><span>📋 Catatan Pengamatan Rumah</span><button id="logClose" type="button" aria-label="Tutup">✕</button></div>
       <table id="logTable"></table>
       <p id="logNote">Dekati rumah target di tiap waktu untuk mengisi catatan.</p>
+    </div>
+  </div>
+</div>
+
+  <div class="panel" id="hackView">
+    <h2>💻 TERMINAL AKSES — MEMBOBOL FIREWALL</h2>
+    <p class="termline">&gt; Menyusup ke rumah target selagi kosong...</p>
+    <p class="termline">&gt; Sistem keamanan mendeteksi pola sinyal acak. Susun sirkuit logika untuk mencocokkan pola yang dibutuhkan agar firewall terbuka.</p>
+    <p class="termline" id="hackHintLine"></p>
+    <div id="hackBody">
+      <div id="hackCircuitCol">
+        <canvas id="circuit" width="340" height="360"></canvas>
+      </div>
+      <div id="hackSideCol">
+        <table class="tt" id="targetTable"></table>
+        <div class="palette" id="gatePalette"></div>
+        <div class="controls2">
+          <button class="ctrl-btn2" id="checkBtn">&gt; EKSEKUSI_BOBOL()</button>
+        </div>
+        <!-- Kontrol khusus mode Simulasi (disembunyikan di mode Story) -->
+        <div class="controls2" id="simRow" style="display:none">
+          <button class="ctrl-btn2" id="simInputsBtn">INPUT: 3</button>
+          <button class="ctrl-btn2" id="simResetBtn">RESET()</button>
+        </div>
+        <div class="controls2" id="simMenuRow" style="display:none">
+          <button class="ctrl-btn2" id="simMenuBtn" style="opacity:.8">&lt; KEMBALI_KE_MENU()</button>
+        </div>
+        <div id="hackStatus">&nbsp;</div>
+        <div class="controls2" id="backRow" style="display:none">
+          <button class="ctrl-btn2" id="backBtn">&lt; KEMBALI_KE_PETA()</button>
+        </div>
+        <div class="controls2" id="cancelRow">
+          <button class="ctrl-btn2" id="cancelBtn" style="opacity:.7">&lt; BATAL (kembali ke rumah)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- ===== FILE MANAGER BUKTI (diisi oleh HackingScene.showFileManager) ===== -->
+<div id="fmOverlay" role="dialog" aria-modal="true" aria-labelledby="fmTitle">
+  <div id="fmWindow">
+    <div id="fmTitleBar"><button class="dot r" id="fmCloseDot" type="button" aria-label="Tutup"></button><span class="dot y"></span><span class="dot g"></span><span id="fmTitle">File Manager</span></div>
+    <div id="fmToolbar"><span class="nav">◀ ▶ ▲</span><div id="fmPath"></div></div>
+    <div id="fmListWrap">
+      <table id="fmTable"><thead><tr><th>Nama</th><th class="tp">Jenis</th><th class="sz">Ukuran</th></tr></thead><tbody id="fmList"></tbody></table>
+    </div>
+    <div id="fmPreview"></div>
+    <div id="fmFoot">
+      <div id="fmStatus"></div>
+      <button id="fmCloseBtn" type="button">Selesai — Kembali ke Peta</button>
     </div>
   </div>
 </div>

@@ -20,6 +20,8 @@ export class GameState {
   slotIdx = 0;
   /** Kecurigaan warga 0..100: naik kalau pemain nongkrong dekat rumah target, turun kalau menjauh. */
   suspicion = 0;
+  /** True setelah minigame hacking berhasil (bukti sudah diambil). */
+  caseSolved = false;
   observationLog: Record<TimeSlot, HouseStatus | null> = emptyLog();
   nextTimeChange = Date.now() + TIME_INTERVAL_MS;
 

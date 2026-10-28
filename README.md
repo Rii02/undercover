@@ -3,7 +3,7 @@
 Game detektif 2D top-down (TypeScript + [Phaser 3](https://phaser.io) + [Vite](https://vitejs.dev)).
 Kamu menyamar sebagai tukang bakso di desa untuk menyelidiki transfer mencurigakan.
 
-## Versi 0.6 — Masuk rumah target
+## Versi 0.7 — Membobol komputer dan bukti
 
 Fitur sampai versi ini:
 
@@ -13,6 +13,7 @@ Fitur sampai versi ini:
 4. Briefing cerita lewat telepon Bos di awal (E / ketuk untuk lanjut, tombol Mulai Misi di akhir); jam desa berhenti selama briefing
 5. Bar kecurigaan: nongkrong dekat rumah target menaikkannya, menjauh menurunkannya, penuh = terusir ke titik awal
 6. Tombol Coba Masuk di pintu: rumah kosong = masuk ke interior (jelajah, tangga, petunjuk, keluar lewat pintu); ada orang = ketahuan dan terusir
+7. Komputer di dalam rumah bisa dibobol lewat minigame sirkuit gerbang logika; sukses = file manager berisi bukti terbuka
 
 ## Menjalankan
 
