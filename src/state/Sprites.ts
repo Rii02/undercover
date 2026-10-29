@@ -12,6 +12,8 @@ export const CHAR_W = 16;
 export const CHAR_H = 16;
 /** Skala tampilan karakter di dunia (16px -> 24px). */
 export const CHAR_SCALE_MAP = 1.5;
+/** Tinggi karakter di dunia (px), dipakai untuk menaruh emoji/label di atas kepala. */
+export const CHAR_HEIGHT_MAP = CHAR_H * CHAR_SCALE_MAP;
 
 const CHAR_ROW: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, F: 4, G: 5, H: 6, I: 7, E: 8 };
 const DIR_COL: Record<string, number> = { down: 0, up: 1, side: 2 };

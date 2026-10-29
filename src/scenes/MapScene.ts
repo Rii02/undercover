@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { GameState, Direction, TIME_INTERVAL_MS, dist, dirFromDelta } from '../state/GameState';
-import { NpcConfig, DialogueLine } from '../state/Chapters';
+import { NpcLine, DialogueLine, AMBIENT_NPCS } from '../state/Chapters';
 import { Hud } from '../state/Hud';
-import { charFrame, CHAR_SCALE_MAP } from '../state/Sprites';
+import { charFrame, CHAR_SCALE_MAP, CHAR_HEIGHT_MAP } from '../state/Sprites';
+import { showMissionComplete } from '../ui/MissionComplete';
 
 // Nama tileset (kiri) HARUS sama dgn nama di Tiled; key (kanan) HARUS sama dgn key di BootScene.
 const TILESETS = [
@@ -19,16 +20,59 @@ const CAMERA_ZOOM = 1.5;
 const PLAYER_SPEED = 180;              // px per detik
 const NEAR_HOUSE_RADIUS = 50;
 const TALK_RADIUS = 44;
+const BOSS_RADIUS = 40;               // jarak maksimal ke Bos agar "Lapor" aktif
 const DOOR_RADIUS = 34;               // jarak maksimal ke pintu agar "Coba Masuk" aktif               // jarak maksimal untuk ngobrol dengan warga          // jarak ke tepi rumah agar pengamatan tercatat
 
 /** Peta dunia: pemain berjalan, jam berganti, rumah target diamati, dan warga bisa diajak ngobrol. */
-interface Npc {
-  cfg: NpcConfig;
+interface Pt { x: number; y: number }
+
+/** Perilaku NPC sipil:
+ *  wander   = jalan ke titik acak (mengikuti jalur yang menghindari tembok)
+ *  idle     = berhenti melakukan aktivitas (main HP, minum kopi, melamun, dst) ditandai emoji
+ *  toChat   = berjalan menghampiri NPC lain untuk ngobrol
+ *  chatting = berdiri ngobrol (💬) */
+type Behavior = 'wander' | 'idle' | 'toChat' | 'chatting';
+
+interface Person {
   sprite: Phaser.GameObjects.Sprite;
-  label: Phaser.GameObjects.Text;
-  /** Indeks baris obrolan yang sedang tampil. */
-  line: number;
+  label?: Phaser.GameObjects.Text;
+  /** Emoji aktivitas di atas kepala (dibuat saat pertama dipakai). */
+  bubble?: Phaser.GameObjects.Text;
+  charKey: string;
+  name: string;
+  x: number; y: number;
+  target: Pt;
+  /** Waypoint sisa menuju tujuan (pusat tile yang bisa dilewati). Kosong = sudah sampai / belum punya tujuan. */
+  path: Pt[];
+  walking: boolean;
+  timer: number;
+  dir: Direction;
+  speed: number;
+  /** Obrolan Aku <-> NPC. dialogueIndex = baris yang sedang tampil. */
+  dialogues: NpcLine[];
+  dialogueIndex: number;
+  behavior: Behavior;
+  /** Timestamp (this.time.now) kapan NPC boleh mengambil keputusan baru. */
+  nextDecisionAt: number;
+  /** Timestamp berakhirnya aktivitas saat ini (idle/chatting) atau batas waktu (toChat). */
+  until: number;
+  /** Lawan bicara saat toChat/chatting. */
+  partner: Person | null;
+  /** Kapan jalur boleh dihitung ulang (dipakai untuk target yang bergerak). */
+  repathAt: number;
+  /** Hitungan frame tertahan tembok; kalau terlalu lama, jalur dibatalkan. */
+  stuck: number;
 }
+
+/** Jumlah warga acak (ambient) per chapter kalau chapter tidak menentukan sendiri. */
+const AMBIENT_COUNT = 5;
+
+const DIRS: ReadonlyArray<[number, number, number]> = [
+  [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+  [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]
+];
+const IDLE_EMOJI = ['📱', '☕', '💭', '📰', '🎧'];
+const LOOK_DIRS: Direction[] = ['down', 'left', 'right', 'up'];
 
 export class MapScene extends Phaser.Scene {
   private state!: GameState;
@@ -38,8 +82,20 @@ export class MapScene extends Phaser.Scene {
   private walkFrame: 0 | 1 = 0;
   private nextStepAt = 0;
   private nearHouseNow = false;
-  private npcs: Npc[] = [];
-  private dialogueNpc: Npc | null = null;
+  private npcs: Person[] = [];
+  private dialogueNpc: Person | null = null;
+  // ---- grid jalan (dari layer Infrastruktur) untuk pathfinding NPC ----
+  private walkGrid: Uint8Array = new Uint8Array(0);
+  private gridW = 0;
+  private gridH = 0;
+  private tileSize = 16;
+  /** Indeks cell yang terhubung dengan titik spawn — titik acak NPC hanya diambil dari sini supaya selalu terjangkau. */
+  private reachCells: number[] = [];
+  private boss!: { label: Phaser.GameObjects.Text; alert: Phaser.GameObjects.Text };
+  /** Lapisan hijau di atas rumah target: penanda "kasus terungkap". */
+  private houseOverlay!: Phaser.GameObjects.Rectangle;
+  /** Layar Mission Complete sedang tampil: kunci input peta. */
+  private overlayOpen = false;
   // ---- dialog cerita Bos <-> Aku ----
   private storyActive = false;
   private storyLines: DialogueLine[] = [];
@@ -76,7 +132,11 @@ export class MapScene extends Phaser.Scene {
       fontSize: '9px', color: '#ffffff', backgroundColor: '#000000aa', padding: { x: 3, y: 2 }
     }).setOrigin(0.5, 1).setDepth(7);
 
+    this.buildWalkGrid(map);
     this.spawnNpcs();
+    this.buildBoss();
+    const hs = this.state.chapter.map.house;
+    this.houseOverlay = this.add.rectangle(hs.x, hs.y, hs.w, hs.h, 0x5affa0, 0.28).setOrigin(0, 0).setDepth(2).setVisible(false);
 
     // ---- pemain ----
     this.player = this.add.sprite(cfg.spawn.x, cfg.spawn.y, 'sheet', 0)
@@ -95,6 +155,7 @@ export class MapScene extends Phaser.Scene {
     Hud.hideDialogue();
     Hud.talkBtn.onclick = () => this.handleInteract();
     Hud.enterBtn.onclick = () => this.tryEnter();
+    Hud.reportBtn.onclick = () => this.laporBos();
     this.events.on(Phaser.Scenes.Events.RESUME, () => { document.body.classList.remove('inside'); Hud.renderLog(this.state); });
     Hud.dialogText.onclick = () => this.advance();
     Hud.dialogCtaBtn.onclick = () => this.advanceStory();
@@ -114,11 +175,16 @@ export class MapScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.movePlayer(delta);
+    this.npcs.forEach(n => this.updateNpcBehavior(n));
     this.checkHouse();
     this.updateSuspicion();
-    const busy = !!this.dialogueNpc || this.storyActive;
+    const busy = !!this.dialogueNpc || this.storyActive || this.overlayOpen;
     Hud.talkBtn.disabled = !this.nearestNpc() || busy;
-    Hud.enterBtn.disabled = !this.nearDoor() || busy;
+    Hud.enterBtn.disabled = !this.nearDoor() || this.state.caseSolved || busy;
+    Hud.reportBtn.disabled = !(this.nearBoss() && this.state.caseSolved && !this.state.missionReported) || busy;
+    this.houseOverlay.setVisible(this.state.caseSolved);
+    this.boss.label.setText(this.state.missionReported ? 'Kasus Selesai ✅' : 'Bos (Telepon)');
+    this.boss.alert.setVisible(this.state.caseSolved && !this.state.missionReported);
   }
 
   // ---------- input ----------
@@ -221,20 +287,48 @@ export class MapScene extends Phaser.Scene {
   }
 
   // ---------- warga ----------
+  /** Bangun NPC penting dari data chapter + beberapa warga acak (ambient) sebagai figuran. */
   private spawnNpcs(): void {
-    for (const cfg of this.state.chapter.npcs) {
-      const { frame } = charFrame(cfg.charKey, 'down', 0);
-      const sprite = this.add.sprite(cfg.x, cfg.y, 'sheet', frame).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
-      const label = this.add.text(cfg.x, cfg.y + 10, cfg.name, { fontSize: '9px', color: '#eef2f7', fontFamily: 'monospace' })
-        .setOrigin(0.5, 0).setDepth(3);
-      this.npcs.push({ cfg, sprite, label, line: 0 });
+    const now = this.time.now;
+    const chapter = this.state.chapter;
+    const sp = chapter.map.spawn;
+    const list: Person[] = chapter.npcs.map(cfg =>
+      this.makePerson(cfg.charKey, cfg.name, cfg.x, cfg.y, cfg.speed, true, cfg.conversation));
+
+    const taken = new Set(chapter.npcs.map(c => c.name));
+    const pool = Phaser.Utils.Array.Shuffle(AMBIENT_NPCS.filter(a => !taken.has(a.name)).slice());
+    const count = Math.min(pool.length, chapter.ambientCount ?? AMBIENT_COUNT);
+    for (let i = 0; i < count; i++) {
+      const t = pool[i];
+      let pt = this.randomPointInWorld(), tries = 0;
+      while (dist(pt.x, pt.y, sp.x, sp.y) < 90 && tries++ < 15) pt = this.randomPointInWorld();
+      list.push(this.makePerson(t.charKey, t.name, pt.x, pt.y, Phaser.Math.FloatBetween(0.8, 1.2), true, t.conversation));
     }
+
+    list.forEach(p => {
+      this.nudgeToWalkable(p);
+      p.nextDecisionAt = now + Phaser.Math.Between(3000, 12000);
+      this.applyPersonVisual(p);
+    });
+    this.npcs = list;
   }
 
-  private nearestNpc(): Npc | null {
-    let best: Npc | null = null, bestD = TALK_RADIUS;
+  private makePerson(charKey: string, name: string, x: number, y: number, speed: number, withLabel: boolean, dialogues: NpcLine[]): Person {
+    const { frame, flipX } = charFrame(charKey, 'down', 0);
+    const sprite = this.add.sprite(x, y, 'sheet', frame).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setFlipX(flipX).setDepth(3);
+    const label = withLabel
+      ? this.add.text(x, y + 10, name, { fontSize: '9px', color: '#eef2f7', fontFamily: 'monospace' }).setOrigin(0.5, 0).setDepth(3)
+      : undefined;
+    return {
+      sprite, label, charKey, name, x, y, target: { x, y }, path: [], walking: false, timer: 0, dir: 'down', speed, dialogues, dialogueIndex: 0,
+      behavior: 'wander', nextDecisionAt: 0, until: 0, partner: null, repathAt: 0, stuck: 0
+    };
+  }
+
+  private nearestNpc(): Person | null {
+    let best: Person | null = null, bestD = TALK_RADIUS;
     for (const n of this.npcs) {
-      const d = dist(this.player.x, this.player.y, n.cfg.x, n.cfg.y);
+      const d = dist(this.player.x, this.player.y, n.x, n.y);
       if (d < bestD) { bestD = d; best = n; }
     }
     return best;
@@ -243,34 +337,33 @@ export class MapScene extends Phaser.Scene {
   // ---------- dialog ----------
   /** Tombol E / tombol "Ajak Bicara": mulai obrolan, atau lanjut ke baris berikutnya kalau dialog sudah terbuka. */
   private handleInteract(): void {
+    if (this.overlayOpen) return;
     if (this.storyActive) { this.advanceStory(); return; }
     if (this.dialogueNpc) { this.advanceDialogue(); return; }
     const npc = this.nearestNpc();
     if (!npc) {
-      if (this.nearDoor()) this.tryEnter();
+      if (this.nearDoor() && !this.state.caseSolved) this.tryEnter();
+      else if (this.nearBoss()) this.laporBos();
       return;
     }
+    if (npc.dialogues.length === 0) return;
     this.dialogueNpc = npc;
-    npc.line = 0;   // tiap ngobrol diputar dari awal
-    // NPC menghadap pemain
-    const face = dirFromDelta(this.player.x - npc.cfg.x, this.player.y - npc.cfg.y);
-    if (face) {
-      const { frame, flipX } = charFrame(npc.cfg.charKey, face, 0);
-      npc.sprite.setFrame(frame).setFlipX(flipX);
-    }
+    npc.dialogueIndex = 0;   // tiap ngobrol diputar dari awal
+    const face = dirFromDelta(this.player.x - npc.x, this.player.y - npc.y);   // NPC menghadap pemain
+    if (face) npc.dir = face;
     this.showLine(npc);
   }
 
-  private showLine(npc: Npc): void {
-    const line = npc.cfg.conversation[npc.line];
-    Hud.showDialogue(line.who === 'Aku' ? '🧑 Aku' : npc.cfg.name, line.text);
+  private showLine(npc: Person): void {
+    const line = npc.dialogues[npc.dialogueIndex];
+    Hud.showDialogue(line.who === 'Aku' ? '🧑 Aku' : npc.name, line.text);
   }
 
   private advanceDialogue(): void {
     const npc = this.dialogueNpc;
     if (!npc) return;
-    if (npc.line < npc.cfg.conversation.length - 1) {
-      npc.line++;
+    if (npc.dialogueIndex < npc.dialogues.length - 1) {
+      npc.dialogueIndex++;
       this.showLine(npc);
       return;
     }
@@ -346,7 +439,7 @@ export class MapScene extends Phaser.Scene {
 
   /** "Coba Masuk": rumah kosong = menyelinap masuk (pindah ke InteriorScene); ada orang = ketahuan dan terusir. */
   private tryEnter(): void {
-    if (!this.nearDoor() || this.dialogueNpc || this.storyActive) return;
+    if (!this.nearDoor() || this.dialogueNpc || this.storyActive || this.overlayOpen) return;
     this.state.setObservation();
     Hud.renderLog(this.state);
     if (this.state.currentStatus === 'kosong') {
@@ -360,5 +453,349 @@ export class MapScene extends Phaser.Scene {
       this.player.x = sp.x; this.player.y = sp.y;
     }
   }
-}
 
+  // ---------- Bos & laporan ----------
+  private buildBoss(): void {
+    const b = this.state.chapter.map.boss;
+    const { frame } = charFrame('F', 'down', 0);
+    this.add.sprite(b.x, b.y, 'sheet', frame).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
+    this.add.text(b.x + 11, b.y - CHAR_HEIGHT_MAP * 0.6, '📞', { fontSize: '13px' }).setOrigin(0.5).setDepth(3);
+    const label = this.add.text(b.x, b.y + 10, 'Bos (Telepon)', { fontSize: '9px', color: '#eef2f7', fontFamily: 'monospace' }).setOrigin(0.5, 0).setDepth(3);
+    const alert = this.add.text(b.x, b.y - CHAR_HEIGHT_MAP - 8, '❗ Ada laporan', { fontSize: '9px', color: '#f5a623', fontFamily: 'monospace' })
+      .setOrigin(0.5).setDepth(3).setVisible(false);
+    this.boss = { label, alert };
+  }
+
+  private nearBoss(): boolean {
+    const b = this.state.chapter.map.boss;
+    return dist(this.player.x, this.player.y, b.x, b.y) < BOSS_RADIUS;
+  }
+
+  /** Lapor ke Bos: putar dialog penutup, lalu layar Mission Complete. */
+  private laporBos(): void {
+    if (this.overlayOpen || this.storyActive || this.dialogueNpc) return;
+    if (!this.nearBoss() || !this.state.caseSolved || this.state.missionReported) return;
+    this.state.missionReported = true;
+    Hud.setToast('📞 Menghubungi Bos...', '#00d9a3');
+    const chapter = this.state.chapter;
+    this.playStory(chapter.debriefingLog, '✅ Complete', () => {
+      this.overlayOpen = true;
+      showMissionComplete({ chapterId: chapter.id, chapterTitle: chapter.title }, () => {
+        // Tamat. Menu utama baru ada di versi berikutnya, jadi untuk sementara muat ulang halaman = main lagi dari awal.
+        window.location.reload();
+      });
+    });
+  }
+
+  // ---------- grid jalan & pathfinding ----------
+  /** Hitung grid "bisa dilewati" dari layer Infrastruktur (aturan sama persis dgn avatar: footBlocked)
+   *  + flood-fill dari spawn utk mengetahui area yang terjangkau. Dipanggil di akhir buildMap(). */
+  private buildWalkGrid(map: Phaser.Tilemaps.Tilemap): void {
+    const T = map.tileWidth;
+    this.tileSize = T;
+    this.gridW = map.width;
+    this.gridH = map.height;
+    this.walkGrid = new Uint8Array(this.gridW * this.gridH);
+    for (let ty = 0; ty < this.gridH; ty++) {
+      for (let tx = 0; tx < this.gridW; tx++) {
+        const cx = tx * T + T / 2, cy = ty * T + T / 2;
+        this.walkGrid[ty * this.gridW + tx] = (!this.footBlocked(cx, cy) && !this.isSolid(cx, cy)) ? 1 : 0;
+      }
+    }
+    // flood fill dari spawn (aturan gerak sama dgn A*: diagonal tak boleh memotong sudut tembok)
+    this.reachCells = [];
+    const start = this.nearestWalkableCell(this.state.chapter.map.spawn.x, this.state.chapter.map.spawn.y, 10);
+    if (start < 0) return;
+    const seen = new Uint8Array(this.walkGrid.length);
+    const queue = [start];
+    seen[start] = 1;
+    for (let qi = 0; qi < queue.length; qi++) {
+      const cur = queue[qi];
+      this.reachCells.push(cur);
+      const cx = cur % this.gridW, cy = Math.floor(cur / this.gridW);
+      for (const [dx, dy] of DIRS) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.isWalkCell(nx, ny)) continue;
+        if (dx !== 0 && dy !== 0 && (!this.isWalkCell(cx + dx, cy) || !this.isWalkCell(cx, cy + dy))) continue;
+        const ni = ny * this.gridW + nx;
+        if (seen[ni]) continue;
+        seen[ni] = 1; queue.push(ni);
+      }
+    }
+  }
+
+  private isWalkCell(tx: number, ty: number): boolean {
+    return tx >= 0 && ty >= 0 && tx < this.gridW && ty < this.gridH && this.walkGrid[ty * this.gridW + tx] === 1;
+  }
+
+  private cellIndex(x: number, y: number): number {
+    const T = this.tileSize;
+    const tx = Phaser.Math.Clamp(Math.floor(x / T), 0, this.gridW - 1);
+    const ty = Phaser.Math.Clamp(Math.floor(y / T), 0, this.gridH - 1);
+    return ty * this.gridW + tx;
+  }
+
+  /** Cell terdekat yang bisa dilewati (mencari melingkar sampai maxR tile). -1 kalau tidak ada. */
+  private nearestWalkableCell(x: number, y: number, maxR = 6): number {
+    const i0 = this.cellIndex(x, y);
+    const tx0 = i0 % this.gridW, ty0 = Math.floor(i0 / this.gridW);
+    if (this.isWalkCell(tx0, ty0)) return i0;
+    for (let r = 1; r <= maxR; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          if (this.isWalkCell(tx0 + dx, ty0 + dy)) return (ty0 + dy) * this.gridW + (tx0 + dx);
+        }
+      }
+    }
+    return -1;
+  }
+
+  /** Kalau NPC kebetulan muncul di dalam tembok/bangunan, geser ke tile bebas terdekat. */
+  private nudgeToWalkable(p: Person): void {
+    if (!this.footBlocked(p.x, p.y)) return;
+    const c = this.nearestWalkableCell(p.x, p.y, 8);
+    if (c < 0) return;
+    const T = this.tileSize;
+    p.x = (c % this.gridW) * T + T / 2;
+    p.y = Math.floor(c / this.gridW) * T + T / 2;
+  }
+
+  /** A* 8 arah di atas walkGrid. Hasil: daftar waypoint (pusat tile, lalu titik tujuan persis kalau tujuannya bebas). Kosong = tidak ada jalur. */
+  private findPath(sx: number, sy: number, ex: number, ey: number): Pt[] {
+    const W = this.gridW, T = this.tileSize;
+    const s = this.nearestWalkableCell(sx, sy), e = this.nearestWalkableCell(ex, ey);
+    if (s < 0 || e < 0) return [];
+    const N = W * this.gridH;
+    const g = new Float32Array(N).fill(Infinity);
+    const f = new Float32Array(N).fill(Infinity);
+    const came = new Int32Array(N).fill(-1);
+    const closed = new Uint8Array(N);
+    const heap: number[] = [];
+    const less = (a: number, b: number) => f[a] < f[b];
+    const push = (i: number) => {
+      heap.push(i);
+      let k = heap.length - 1;
+      while (k > 0) {
+        const p = (k - 1) >> 1;
+        if (!less(heap[k], heap[p])) break;
+        [heap[k], heap[p]] = [heap[p], heap[k]]; k = p;
+      }
+    };
+    const pop = (): number => {
+      const top = heap[0];
+      const last = heap.pop()!;
+      if (heap.length) {
+        heap[0] = last;
+        let k = 0;
+        for (;;) {
+          const l = 2 * k + 1, r = l + 1;
+          let mn = k;
+          if (l < heap.length && less(heap[l], heap[mn])) mn = l;
+          if (r < heap.length && less(heap[r], heap[mn])) mn = r;
+          if (mn === k) break;
+          [heap[k], heap[mn]] = [heap[mn], heap[k]]; k = mn;
+        }
+      }
+      return top;
+    };
+    const gx = e % W, gy = Math.floor(e / W);
+    const heur = (i: number) => {
+      const dx = Math.abs((i % W) - gx), dy = Math.abs(Math.floor(i / W) - gy);
+      return dx + dy - 0.586 * Math.min(dx, dy);
+    };
+    g[s] = 0; f[s] = heur(s); push(s);
+    while (heap.length) {
+      const cur = pop();
+      if (closed[cur]) continue;
+      closed[cur] = 1;
+      if (cur === e) break;
+      const cx = cur % W, cy = Math.floor(cur / W);
+      for (const [dx, dy, cost] of DIRS) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.isWalkCell(nx, ny)) continue;
+        if (dx !== 0 && dy !== 0 && (!this.isWalkCell(cx + dx, cy) || !this.isWalkCell(cx, cy + dy))) continue;
+        const ni = ny * W + nx;
+        if (closed[ni]) continue;
+        const ng = g[cur] + cost;
+        if (ng < g[ni]) { g[ni] = ng; f[ni] = ng + heur(ni); came[ni] = cur; push(ni); }
+      }
+    }
+    if (!closed[e]) return [];
+    const out: Pt[] = [];
+    for (let i = e; i !== -1; i = came[i]) out.push({ x: (i % W) * T + T / 2, y: Math.floor(i / W) * T + T / 2 });
+    out.reverse();
+    if (!this.footBlocked(ex, ey) && this.cellIndex(ex, ey) === e) out.push({ x: ex, y: ey });
+    return out;
+  }
+
+  /** Hitung jalur p -> (x,y) dan simpan di p.path. true kalau ada jalur. */
+  private setDestination(p: Person, x: number, y: number): boolean {
+    p.target = { x, y };
+    p.path = this.findPath(p.x, p.y, x, y);
+    p.stuck = 0;
+    return p.path.length > 0;
+  }
+
+  /** Jalan satu langkah menyusuri p.path (tetap dicek ulang terhadap tembok seperti avatar).
+   *  Mengembalikan true kalau tidak ada lagi jalur yg harus ditempuh (sudah sampai atau menyerah). */
+  private followPath(p: Person): boolean {
+    const wp = p.path[0];
+    if (!wp) { p.walking = false; p.timer = 0; return true; }
+    const dx = wp.x - p.x, dy = wp.y - p.y, d = Math.hypot(dx, dy);
+    p.walking = true;
+    const nd = dirFromDelta(dx, dy); if (nd) p.dir = nd;
+    if (d <= p.speed) {
+      p.x = wp.x; p.y = wp.y; p.path.shift(); p.stuck = 0;
+    } else {
+      const nx = p.x + dx / d * p.speed, ny = p.y + dy / d * p.speed;
+      let moved = false;
+      if (!this.footBlocked(nx, p.y)) { p.x = nx; moved = true; }
+      if (!this.footBlocked(p.x, ny)) { p.y = ny; moved = true; }
+      p.stuck = moved ? 0 : p.stuck + 1;
+    }
+    p.timer++;
+    if (p.stuck > 30) p.path = [];   // tertahan lama -> menyerah, pilih tujuan baru
+    if (p.path.length === 0) { p.walking = false; p.timer = 0; return true; }
+    return false;
+  }
+
+  /** Titik acak yang bisa dijangkau dari spawn, tidak menimpa tembok & tidak terlalu dekat rumah target. */
+  private randomPointInWorld(): Pt {
+    const T = this.tileSize;
+    if (this.reachCells.length === 0) return { x: this.gridW * this.tileSize / 2, y: this.gridH * this.tileSize / 2 };
+    let x = 0, y = 0, tries = 0;
+    do {
+      const idx = this.reachCells[Math.floor(Math.random() * this.reachCells.length)];
+      x = (idx % this.gridW) * T + T / 2 + Phaser.Math.Between(-2, 2);
+      y = Math.floor(idx / this.gridW) * T + T / 2 + Phaser.Math.Between(-2, 2);
+      tries++;
+    } while (this.pointBlocked(x, y) && tries < 60);
+    return { x, y };
+  }
+  /** Titik acak di sekitar `from` (radius px); kalau tidak ketemu, titik acak di mana saja. */
+  private randomPointNear(from: Pt, radius: number): Pt {
+    for (let i = 0; i < 40; i++) {
+      const q = this.randomPointInWorld();
+      if (dist(q.x, q.y, from.x, from.y) < radius) return q;
+    }
+    return this.randomPointInWorld();
+  }
+  /** Titik tidak boleh dipilih kalau menimpa bangunan/pohon, atau terlalu dekat rumah target. */
+  private pointBlocked(x: number, y: number): boolean {
+    if (this.footBlocked(x, y)) return true;
+    const H = this.state.chapter.map.house;
+    return x > H.x - 25 && x < H.x + H.w + 25 && y > H.y - 25 && y < H.y + H.h + 25;
+  }
+
+  // ---------- perilaku NPC ----------
+  private setBubble(p: Person, emoji: string | null): void {
+    if (!emoji) { p.bubble?.setVisible(false); return; }
+    const b = p.bubble ?? this.add.text(p.x, p.y - CHAR_HEIGHT_MAP - 6, emoji, { fontSize: '12px' }).setOrigin(0.5).setDepth(4);
+    p.bubble = b;
+    b.setText(emoji).setVisible(true);
+  }
+
+  private startWander(n: Person): void {
+    n.behavior = 'wander';
+    n.path = [];
+    n.partner = null;
+    this.setBubble(n, null);
+  }
+
+  private startIdle(n: Person, now: number): void {
+    n.behavior = 'idle';
+    n.walking = false; n.timer = 0;
+    n.until = now + Phaser.Math.Between(4000, 9000);
+    n.dir = Phaser.Utils.Array.GetRandom(LOOK_DIRS);
+    this.setBubble(n, Phaser.Utils.Array.GetRandom(IDLE_EMOJI));
+  }
+
+  /** Mencoba mengajak NPC lain di dekat sini ngobrol. true kalau berhasil memulai. */
+  private startChat(n: Person, now: number): boolean {
+    const cands = this.npcs.filter(o => o !== n && (o.behavior === 'wander' || o.behavior === 'idle')
+      && dist(o.x, o.y, n.x, n.y) < 350 && this.dialogueNpc !== o);
+    if (cands.length === 0) return false;
+    const p = Phaser.Utils.Array.GetRandom(cands);
+    const spots: Pt[] = [{ x: p.x - 20, y: p.y }, { x: p.x + 20, y: p.y }, { x: p.x, y: p.y + 14 }, { x: p.x, y: p.y - 14 }];
+    const spot = spots.find(s => !this.footBlocked(s.x, s.y));
+    if (!spot || !this.setDestination(n, spot.x, spot.y)) return false;
+    // lawan bicara berhenti & menunggu
+    p.behavior = 'chatting'; p.path = []; p.walking = false; p.timer = 0;
+    p.partner = n; p.until = now + 20000;
+    this.setBubble(p, '💬');
+    n.behavior = 'toChat'; n.partner = p; n.until = now + 20000;
+    this.setBubble(n, null);
+    return true;
+  }
+
+  private endChat(n: Person): void {
+    const p = n.partner;
+    this.startWander(n);
+    if (p && p.partner === n && p.behavior === 'chatting') this.startWander(p);
+  }
+
+  /** Dipanggil saat NPC selesai berjalan ke tujuan wander: pilih aktivitas berikutnya. */
+  private onArrive(n: Person, now: number): void {
+    const r = Math.random();
+    if (r < 0.5) this.startIdle(n, now);
+    else if (r < 0.75 && this.startChat(n, now)) return;
+    else if (r < 0.75) this.startIdle(n, now);
+    else n.path = [];   // langsung jalan lagi ke titik lain
+  }
+
+  /** Atur perilaku satu NPC sipil tiap frame. Semua gerak mengikuti jalur yang menghindari
+   *  tembok/bangunan (Infrastruktur), sama seperti avatar. Diam total kalau sedang diajak ngobrol pemain. */
+  private updateNpcBehavior(n: Person): void {
+    if (this.dialogueNpc === n) {
+      n.walking = false;
+      this.applyPersonVisual(n);
+      return;
+    }
+    const now = this.time.now;
+
+    switch (n.behavior) {
+      case 'wander': {
+        if (n.path.length === 0) {
+          const t = this.randomPointNear(n, 240);
+          if (!this.setDestination(n, t.x, t.y)) { this.startIdle(n, now); break; }
+        }
+        if (this.followPath(n)) this.onArrive(n, now);
+        break;
+      }
+      case 'idle': {
+        n.walking = false;
+        if (now >= n.until) this.startWander(n);
+        break;
+      }
+      case 'toChat': {
+        const p = n.partner;
+        if (!p || p.behavior !== 'chatting' || now > n.until) { this.endChat(n); break; }
+        if (this.followPath(n)) {
+          if (dist(n.x, n.y, p.x, p.y) < 40) {
+            const end = now + Phaser.Math.Between(4000, 8000);
+            n.behavior = 'chatting'; n.until = end; p.until = end;
+            const a = dirFromDelta(p.x - n.x, p.y - n.y); if (a) n.dir = a;
+            const b = dirFromDelta(n.x - p.x, n.y - p.y); if (b) p.dir = b;
+            this.setBubble(n, '💬'); this.setBubble(p, '💬');
+          } else this.endChat(n);
+        }
+        break;
+      }
+      case 'chatting': {
+        n.walking = false;
+        if (now >= n.until) this.endChat(n);
+        break;
+      }
+    }
+    this.applyPersonVisual(n);
+  }
+
+  private applyPersonVisual(p: Person): void {
+    const frame = p.walking ? (Math.floor(p.timer / 10) % 2) as 0 | 1 : 0;
+    const { frame: fi, flipX } = charFrame(p.charKey, p.dir, frame);
+    p.sprite.setFrame(fi).setFlipX(flipX).setPosition(Math.round(p.x), Math.round(p.y));
+    p.label?.setPosition(p.x, p.y + 10);
+    p.bubble?.setPosition(p.x, p.y - CHAR_HEIGHT_MAP - 6);
+  }
+}

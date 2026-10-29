@@ -48,6 +48,8 @@ export interface MapConfig {
   /** Path file peta (relatif ke folder public/). */
   file: string;
   spawn: { x: number; y: number };
+  /** Posisi Bos di peta (tempat melapor). */
+  boss: { x: number; y: number };
   /** Titik di DEPAN pintu target (di luar bangunan). */
   door: { x: number; y: number };
   /** Persegi bangunan rumah target. */
@@ -61,12 +63,16 @@ export interface ChapterConfig {
   /** Tujuan chapter, ditampilkan sebagai toast saat game mulai. */
   objective: string;
   suspectName: string;
+  /** Laporan ke Bos setelah bukti didapat (menutup chapter). */
+  debriefingLog: DialogueLine[];
   /** Pembukaan cerita (narasi + telepon Bos), ditampilkan sebelum misi dimulai. */
   briefingLog: DialogueLine[];
   map: MapConfig;
   /** Jadwal rumah target: kapan ada orang / kosong. */
   schedulePattern: Record<TimeSlot, HouseStatus>;
   npcs: NpcConfig[];
+  /** Jumlah warga acak (figuran). Kosong = pakai default di MapScene. */
+  ambientCount?: number;
   /** Peta Tiled interior chapter ini (key & file, path relatif ke folder public/). */
   interiorMap: { key: string; file: string };
   /** Judul di header interior: "Di Dalam {interiorTitle}". */
@@ -104,7 +110,7 @@ export const CHAPTERS: ChapterConfig[] = [
     ],
     map: {
       key: 'map1', file: 'assets/maps/ch1.json',
-      spawn: { x: 440, y: 408 },
+      spawn: { x: 440, y: 408 }, boss: { x: 536, y: 424 },
       house: { x: 800, y: 192, w: 112, h: 128 },
       door: { x: 856, y: 328 }
     },
@@ -131,6 +137,14 @@ export const CHAPTERS: ChapterConfig[] = [
         ]
       },
       { name: 'remote_session.log', lines: ['Laptop ini dikendalikan dari jauh setiap malam sekitar pukul 02.00.'] }
+    ],
+    debriefingLog: [
+      aku('Bos, penerimanya bukan Pak Herman. Namanya Melati S.'),
+      bos('Dan laptop itu dikendalikan dari luar. Herman cuma dipinjam.'),
+      aku('Berarti selama ini saya salah curiga?'),
+      bos('Belum tentu. Dia tetap perlu diperiksa. Tapi sekarang kita punya nama.'),
+      narasi('Sebelum pergi tadi, kursor di layar sempat bergerak sendiri. Satu baris diketik: “sesi baru dibuka”. Ada yang sedang memakai laptop itu saat itu juga.'),
+      narasi('Kamu mencabut kabelnya dan layar mati. Di folder “Sampah” tinggal satu nama: Melati S.')
     ],
     npcs: [
       {
@@ -170,6 +184,93 @@ export const CHAPTERS: ChapterConfig[] = [
           them('Mungkin. Tapi minggu lalu juga gitu. Pas aku lewat, tulisan di layarnya gerak-gerak sendiri, kayak ada yang ngetik. Padahal nggak ada orang.')
         ]
       }
+    ]
+  }
+];
+
+// ============================ WARGA ACAK (AMBIENT) ============================
+/** Template warga figuran. Tiap chapter dimuat, MapScene mengambil beberapa secara acak dan
+ *  menaruhnya di titik acak yang bisa dijangkau. Obrolannya hanya suasana — bukan petunjuk kasus. */
+export interface AmbientNpcTemplate {
+  charKey: string;
+  name: string;
+  conversation: NpcLine[];
+}
+
+export const AMBIENT_NPCS: AmbientNpcTemplate[] = [
+  {
+    charKey: 'C', name: 'Bu Tini',
+    conversation: [
+      me('Bakso, Bu? Masih hangat nih.'),
+      them('Nanti ya, Mas. Ibu lagi nunggu tukang sayur lewat.'),
+      me('Sayur sekarang mahal ya, Bu?'),
+      them('Cabai naik terus. Belanja sekarang itung-itungannya bikin pusing.'),
+      me('Semoga cepat turun, Bu.'),
+      them('Amin. Semangat jualannya, Mas.')
+    ]
+  },
+  {
+    charKey: 'D', name: 'Pak Wawan',
+    conversation: [
+      me('Selamat siang, Pak. Baksonya?'),
+      them('Wah, tadi malam saya jaga ronda, ngantuk sekali. Bakso panas cocok ini.'),
+      me('Ronda aman, Pak?'),
+      them('Aman-aman saja. Cuma kucing lewat sama bunyi jangkrik.'),
+      me('Alhamdulillah kalau begitu.')
+    ]
+  },
+  {
+    charKey: 'B', name: 'Dek Nia',
+    conversation: [
+      me('Dek, mau bakso?'),
+      them('Mau, Kak! Tapi uang jajanku tinggal buat setengah porsi.'),
+      me('Setengah porsi pun jadi.'),
+      them('Asyik! Besok ada ulangan, butuh tenaga dulu.')
+    ]
+  },
+  {
+    charKey: 'I', name: 'Pak Slamet',
+    conversation: [
+      me('Baksonya, Pak?'),
+      them('Saya lagi nunggu burung tetangga berhenti berkicau. Berisik tapi bikin rindu.'),
+      me('Burung peliharaan Bapak juga?'),
+      them('Sudah dijual. Sekarang cuma jadi pendengar saja.')
+    ]
+  },
+  {
+    charKey: 'C', name: 'Bu Ratmi',
+    conversation: [
+      me('Bu, bakso hangatnya?'),
+      them('Boleh nanti. Ibu lagi mikir menu arisan minggu depan.'),
+      me('Arisan di rumah Ibu?'),
+      them('Iya. Jangan sampai kehabisan kue, nanti diomongin sebulan penuh.')
+    ]
+  },
+  {
+    charKey: 'G', name: 'Mas Bagas',
+    conversation: [
+      me('Mas, mampir bakso?'),
+      them('Sebentar, Mas. Paket saya masih banyak, alamatnya muter-muter terus.'),
+      me('Kurir ya? Capek dong.'),
+      them('Capek, tapi lumayan. Yang penting nggak salah alamat.')
+    ]
+  },
+  {
+    charKey: 'B', name: 'Mbak Putri',
+    conversation: [
+      me('Mbak, baksonya?'),
+      them('Satu porsi, tanpa seledri ya. Saya lagi buru-buru, belum sempat sarapan.'),
+      me('Siap. Kerjanya jauh, Mbak?'),
+      them('Lumayan, naik angkot dua kali. Doakan nggak telat.')
+    ]
+  },
+  {
+    charKey: 'H', name: 'Pak Heru',
+    conversation: [
+      me('Pak, bakso?'),
+      them('Nanti saja. Saya lagi lihat pohon mangga ini, sudah berbuah banyak.'),
+      me('Wah, manis nggak, Pak?'),
+      them('Belum tahu. Tunggu matang dulu. Kesabaran itu rasanya manis.')
     ]
   }
 ];
