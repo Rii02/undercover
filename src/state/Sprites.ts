@@ -15,6 +15,10 @@ export const CHAR_SCALE_MAP = 1.5;
 /** Tinggi karakter di dunia (px), dipakai untuk menaruh emoji/label di atas kepala. */
 export const CHAR_HEIGHT_MAP = CHAR_H * CHAR_SCALE_MAP;
 
+/** Spritesheet gerobak bakso: 2 frame animasi, tiap frame 32x32 px. */
+export const CART_W = 32;
+export const CART_H = 32;
+
 const CHAR_ROW: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, F: 4, G: 5, H: 6, I: 7, E: 8 };
 const DIR_COL: Record<string, number> = { down: 0, up: 1, side: 2 };
 

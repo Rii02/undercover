@@ -17,6 +17,7 @@ export const Hud = {
   logTable: $<HTMLTableElement>('logTable'),
   talkBtn: $<HTMLButtonElement>('talkBtn'),
   enterBtn: $<HTMLButtonElement>('enterBtn'),
+  cartBtn: $<HTMLButtonElement>('cartBtn'),
   reportBtn: $<HTMLButtonElement>('reportBtn'),
   computerBtn: $<HTMLButtonElement>('computerBtn'),
   interiorHint: $('interiorHint'),

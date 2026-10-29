@@ -3,7 +3,7 @@
 Game detektif 2D top-down (TypeScript + [Phaser 3](https://phaser.io) + [Vite](https://vitejs.dev)).
 Kamu menyamar sebagai tukang bakso di desa untuk menyelidiki transfer mencurigakan.
 
-## Versi 0.9 — Warga hidup
+## Versi 0.10 — Gerobak bakso
 
 Fitur sampai versi ini:
 
@@ -16,6 +16,7 @@ Fitur sampai versi ini:
 7. Komputer di dalam rumah bisa dibobol lewat minigame sirkuit gerbang logika; sukses = file manager berisi bukti terbuka
 8. Bos di peta (📞); setelah bukti didapat, rumah ditandai hijau dan Bos memanggil; lapor → dialog penutup → layar Mission Complete. Chapter 1 bisa ditamatkan
 9. Warga berjalan sendiri dengan pathfinding A* yang menghindari tembok, berhenti santai (📱☕💭), saling ngobrol (💬); ada warga acak sebagai figuran
+10. Gerobak didorong bersama pemain; F menaruh/mengambil; wajib ditaruh dan ditinggalkan sebelum masuk rumah target; warga sesekali membeli bakso (menurunkan kecurigaan)
 
 ## Menjalankan
 

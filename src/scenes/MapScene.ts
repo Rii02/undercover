@@ -20,6 +20,12 @@ const CAMERA_ZOOM = 1.5;
 const PLAYER_SPEED = 180;              // px per detik
 const NEAR_HOUSE_RADIUS = 50;
 const TALK_RADIUS = 44;
+/** Jarak horizontal pusat gerobak dari pemain (px dunia). */
+const CART_OFFSET_X = 20 * CHAR_SCALE_MAP;
+/** Gerobak yang sudah ditaruh bisa diambil lagi kalau pemain lebih dekat dari ini. */
+const CART_PICKUP_RADIUS = 56;
+/** Syarat masuk rumah target: gerobak sudah ditaruh DAN pemain sudah menjauh sekurang-kurangnya sejauh ini darinya. */
+const CART_LEAVE_DIST = 90;
 const BOSS_RADIUS = 40;               // jarak maksimal ke Bos agar "Lapor" aktif
 const DOOR_RADIUS = 34;               // jarak maksimal ke pintu agar "Coba Masuk" aktif               // jarak maksimal untuk ngobrol dengan warga          // jarak ke tepi rumah agar pengamatan tercatat
 
@@ -30,8 +36,10 @@ interface Pt { x: number; y: number }
  *  wander   = jalan ke titik acak (mengikuti jalur yang menghindari tembok)
  *  idle     = berhenti melakukan aktivitas (main HP, minum kopi, melamun, dst) ditandai emoji
  *  toChat   = berjalan menghampiri NPC lain untuk ngobrol
- *  chatting = berdiri ngobrol (💬) */
-type Behavior = 'wander' | 'idle' | 'toChat' | 'chatting';
+ *  chatting = berdiri ngobrol (💬)
+ *  toCart   = berjalan ke gerobak bakso pemain
+ *  buying   = berhenti beli bakso (🍜) */
+type Behavior = 'wander' | 'idle' | 'toChat' | 'chatting' | 'toCart' | 'buying';
 
 interface Person {
   sprite: Phaser.GameObjects.Sprite;
@@ -91,6 +99,12 @@ export class MapScene extends Phaser.Scene {
   private tileSize = 16;
   /** Indeks cell yang terhubung dengan titik spawn — titik acak NPC hanya diambil dari sini supaya selalu terjangkau. */
   private reachCells: number[] = [];
+  private cart!: Phaser.GameObjects.Sprite;
+  /** Gerobak sedang ditaruh di tanah (true) atau didorong pemain (false). */
+  private cartPlaced = false;
+  private cartSpot: Pt = { x: 0, y: 0 };
+  private cartFlip = false;
+  private lastDoorHintAt = 0;
   private boss!: { label: Phaser.GameObjects.Text; alert: Phaser.GameObjects.Text };
   /** Lapisan hijau di atas rumah target: penanda "kasus terungkap". */
   private houseOverlay!: Phaser.GameObjects.Rectangle;
@@ -143,6 +157,10 @@ export class MapScene extends Phaser.Scene {
       .setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
     this.applyFrame();
 
+    // Gerobak bakso (sprite beranimasi). Gagang di sisi kiri gambar -> gerobak di kanan pemain; saat menghadap kiri di-flip.
+    this.cart = this.add.sprite(0, 0, 'gerobak', 0).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
+    this.cart.play('gerobak_idle');
+
     // ---- kamera ----
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     this.cameras.main.setZoom(CAMERA_ZOOM);
@@ -155,6 +173,7 @@ export class MapScene extends Phaser.Scene {
     Hud.hideDialogue();
     Hud.talkBtn.onclick = () => this.handleInteract();
     Hud.enterBtn.onclick = () => this.tryEnter();
+    Hud.cartBtn.onclick = () => this.toggleCart();
     Hud.reportBtn.onclick = () => this.laporBos();
     this.events.on(Phaser.Scenes.Events.RESUME, () => { document.body.classList.remove('inside'); Hud.renderLog(this.state); });
     Hud.dialogText.onclick = () => this.advance();
@@ -175,12 +194,23 @@ export class MapScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.movePlayer(delta);
+    const cp = this.cartPosition();
+    this.cart.setFlipX(this.cartPlaced ? this.cartFlip : this.facing === 'left').setPosition(Math.round(cp.x), Math.round(cp.y));
     this.npcs.forEach(n => this.updateNpcBehavior(n));
     this.checkHouse();
     this.updateSuspicion();
     const busy = !!this.dialogueNpc || this.storyActive || this.overlayOpen;
     Hud.talkBtn.disabled = !this.nearestNpc() || busy;
     Hud.enterBtn.disabled = !this.nearDoor() || this.state.caseSolved || busy;
+    const nearCart = dist(this.player.x, this.player.y, this.cartSpot.x, this.cartSpot.y) <= CART_PICKUP_RADIUS;
+    const cartLabel = this.cartPlaced ? '🛒 Ambil Gerobak (F)' : '🛒 Taruh Gerobak (F)';
+    if (Hud.cartBtn.textContent !== cartLabel) Hud.cartBtn.textContent = cartLabel;
+    Hud.cartBtn.disabled = busy || (this.cartPlaced && !nearCart);
+    // Petunjuk sekali-sekali saat pemain di depan pintu tapi belum memenuhi syarat gerobak.
+    if (this.nearDoor() && !this.state.caseSolved && this.cartRuleMessage() && this.time.now - this.lastDoorHintAt > 6000) {
+      this.lastDoorHintAt = this.time.now;
+      Hud.setToast(this.cartRuleMessage()!, '#f5a623');
+    }
     Hud.reportBtn.disabled = !(this.nearBoss() && this.state.caseSolved && !this.state.missionReported) || busy;
     this.houseOverlay.setVisible(this.state.caseSolved);
     this.boss.label.setText(this.state.missionReported ? 'Kasus Selesai ✅' : 'Bos (Telepon)');
@@ -193,7 +223,12 @@ export class MapScene extends Phaser.Scene {
     this.cursors = kb.createCursorKeys();
     this.wasd = kb.addKeys('W,A,S,D') as Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
     // E lewat window (bukan Phaser): Scene yang di-pause tak menerima event, jadi E yang menutup interior tidak ikut "bocor" ke peta.
-    const onKey = (e: KeyboardEvent) => { if (e.key.toLowerCase() === 'e' && !e.repeat) this.handleInteract(); };
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (e.repeat) return;
+      if (k === 'e') this.handleInteract();
+      if (k === 'f') this.toggleCart();
+    };
     window.addEventListener('keydown', onKey);
     this.events.once('shutdown', () => window.removeEventListener('keydown', onKey));
 
@@ -413,7 +448,7 @@ export class MapScene extends Phaser.Scene {
   private showBriefing(): void {
     this.playStory(this.state.chapter.briefingLog, '▶ Mulai Misi', () => {
       this.state.nextTimeChange = Date.now() + TIME_INTERVAL_MS;   // jam mulai dari awal setelah briefing
-      Hud.setToast(`🎯 ${this.state.chapter.objective}`, '#00d9a3');
+      Hud.setToast(`🎯 ${this.state.chapter.objective}  🛒 Tekan F untuk menaruh/mengambil gerobak; taruh dulu sebelum masuk rumah.`, '#00d9a3');
     });
   }
 
@@ -440,6 +475,8 @@ export class MapScene extends Phaser.Scene {
   /** "Coba Masuk": rumah kosong = menyelinap masuk (pindah ke InteriorScene); ada orang = ketahuan dan terusir. */
   private tryEnter(): void {
     if (!this.nearDoor() || this.dialogueNpc || this.storyActive || this.overlayOpen) return;
+    const blocked = this.cartRuleMessage();
+    if (blocked) { Hud.setToast(blocked, '#f5a623'); return; }
     this.state.setObservation();
     Hud.renderLog(this.state);
     if (this.state.currentStatus === 'kosong') {
@@ -485,6 +522,71 @@ export class MapScene extends Phaser.Scene {
         window.location.reload();
       });
     });
+  }
+
+  /** Posisi gerobak bakso pemain saat ini (gerobak menempel & ikut bergerak bersama pemain). */
+  private cartPosition(): { x: number; y: number } {
+    if (this.cartPlaced) return this.cartSpot;
+    const side = this.facing === 'left' ? -1 : 1;
+    return { x: this.player.x + side * CART_OFFSET_X, y: this.player.y + 2 };
+  }
+
+  /** Titik gerobak kalau ditaruh di sisi `side` (-1 kiri / +1 kanan) pemain. */
+  private cartSpotAt(side: number): Pt {
+    return { x: this.player.x + side * CART_OFFSET_X, y: this.player.y + 2 };
+  }
+
+  /** Tempat gerobak muat? (tidak menimpa tembok/pohon & tidak di dalam persegi rumah target) */
+  private cartSpotFree(p: Pt): boolean {
+    const half = 14;   // setengah lebar kaki gerobak (px dunia)
+    if (this.footBlocked(p.x - half, p.y) || this.footBlocked(p.x, p.y) || this.footBlocked(p.x + half, p.y)) return false;
+    const H = this.state.chapter.map.house;
+    return !(p.x > H.x && p.x < H.x + H.w && p.y > H.y && p.y < H.y + H.h);
+  }
+
+  /** Tombol F: taruh gerobak di samping pemain, atau ambil lagi kalau sudah ditaruh & pemain dekat. */
+  private toggleCart(): void {
+    if (this.overlayOpen || this.storyActive || this.dialogueNpc || !this.scene.isActive()) return;
+    if (this.cartPlaced) {
+      if (dist(this.player.x, this.player.y, this.cartSpot.x, this.cartSpot.y) > CART_PICKUP_RADIUS) {
+        Hud.setToast('🛒 Terlalu jauh dari gerobak. Dekati gerobakmu dulu, baru tekan F.', '#f5a623');
+        return;
+      }
+      this.cartPlaced = false;
+      Hud.setToast('🛒 Gerobak diambil lagi.', '#00d9a3');
+      return;
+    }
+    const pref = this.facing === 'left' ? -1 : 1;
+    const spot = [this.cartSpotAt(pref), this.cartSpotAt(-pref)].find(p => this.cartSpotFree(p));
+    if (!spot) {
+      Hud.setToast('🛒 Tidak ada ruang untuk menaruh gerobak di sini. Pindah ke tempat yang lebih lapang.', '#ff6b6b');
+      return;
+    }
+    this.cartPlaced = true;
+    this.cartSpot = { x: spot.x, y: spot.y };
+    this.cartFlip = spot.x < this.player.x;
+    Hud.setToast('🛒 Gerobak ditaruh. Tekan F di dekatnya untuk mengambil lagi.', '#00d9a3');
+  }
+
+  /** Boleh masuk rumah target? Gerobak harus sudah ditaruh dan ditinggalkan (pemain menjauh >= CART_LEAVE_DIST). */
+  private cartRuleMessage(): string | null {
+    if (!this.cartPlaced) return '🛒 Kamu masih mendorong gerobak bakso! Taruh dulu gerobaknya (tekan F) sebelum masuk rumah.';
+    if (dist(this.player.x, this.player.y, this.cartSpot.x, this.cartSpot.y) < CART_LEAVE_DIST) {
+      return '🚶 Gerobakmu masih terlalu dekat. Tinggalkan gerobak (jauhi sedikit) baru masuk rumah.';
+    }
+    return null;
+  }
+
+  /** Titik pembeli berdiri: tepat di depan (bawah) gerobak. */
+  private cartCustomerSpot(): { x: number; y: number } {
+    const c = this.cartPosition();
+    return { x: c.x, y: c.y + 10 };
+  }
+
+  private jualBakso(npc: Person): void {
+    const target = npc;
+    this.state.suspicion = 0;
+    Hud.setToast('🍜 ' + (target ? target.name : 'Warga') + ' beli bakso — kecurigaan mereda, penyamaranmu makin kuat!', '#00d9a3');
   }
 
   // ---------- grid jalan & pathfinding ----------
@@ -754,6 +856,15 @@ export class MapScene extends Phaser.Scene {
     }
     const now = this.time.now;
 
+    // Sesekali tertarik beli bakso (hanya saat sedang santai).
+    if ((n.behavior === 'wander' || n.behavior === 'idle') && now >= n.nextDecisionAt) {
+      n.nextDecisionAt = now + Phaser.Math.Between(9000, 16000);
+      if (Math.random() < 0.4) {
+        n.behavior = 'toCart'; n.path = []; n.repathAt = 0; n.until = now + 15000;
+        this.setBubble(n, null);
+      }
+    }
+
     switch (n.behavior) {
       case 'wander': {
         if (n.path.length === 0) {
@@ -785,6 +896,29 @@ export class MapScene extends Phaser.Scene {
       case 'chatting': {
         n.walking = false;
         if (now >= n.until) this.endChat(n);
+        break;
+      }
+      case 'toCart': {
+        const c = this.cartCustomerSpot();
+        if (now >= n.repathAt) {
+          n.repathAt = now + 500;
+          if (!this.setDestination(n, c.x, c.y)) { this.startWander(n); break; }
+        }
+        this.followPath(n);
+        if (dist(n.x, n.y, c.x, c.y) < 20) {
+          n.path = []; n.walking = false; n.timer = 0;
+          n.behavior = 'buying'; n.until = now + 1600;
+          this.setBubble(n, '🍜');
+          this.jualBakso(n);
+        } else if (now > n.until) this.startWander(n);
+        break;
+      }
+      case 'buying': {
+        n.walking = false;
+        if (now >= n.until) {
+          this.startWander(n);
+          n.nextDecisionAt = now + Phaser.Math.Between(10000, 18000);
+        }
         break;
       }
     }

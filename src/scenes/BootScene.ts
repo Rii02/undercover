@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CHAPTERS } from '../state/Chapters';
-import { CHAR_W, CHAR_H } from '../state/Sprites';
+import { CHAR_W, CHAR_H, CART_W, CART_H } from '../state/Sprites';
 
 /** Memuat semua aset, lalu langsung masuk ke MapScene. */
 export class BootScene extends Phaser.Scene {
@@ -11,6 +11,9 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     // Karakter: 6 kolom x 9 baris, frame 16x16 (susunan dijelaskan di Sprites.ts).
     this.load.spritesheet('sheet', 'assets/characters/karakter_sheet.png', { frameWidth: CHAR_W, frameHeight: CHAR_H });
+
+    // Gerobak bakso milik pemain (2 frame animasi).
+    this.load.spritesheet('gerobak', 'assets/characters/gerobak_bakso.png', { frameWidth: CART_W, frameHeight: CART_H });
 
     // Peta Tiled tiap chapter (key & file didefinisikan di CHAPTERS[i].map).
     for (const ch of CHAPTERS) {
@@ -32,6 +35,9 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    if (!this.anims.exists('gerobak_idle')) {
+      this.anims.create({ key: 'gerobak_idle', frames: this.anims.generateFrameNumbers('gerobak', { start: 0, end: 1 }), frameRate: 3, repeat: -1 });
+    }
     this.scene.start('Map');
   }
 }
