@@ -105,6 +105,8 @@ export class MapScene extends Phaser.Scene {
   private cartSpot: Pt = { x: 0, y: 0 };
   private cartFlip = false;
   private lastDoorHintAt = 0;
+  /** Pemilik rumah target: terlihat berjalan keluar saat rumah "kosong", masuk dan hilang saat "ada orang". */
+  private owner!: Person & { visible: boolean };
   private boss!: { label: Phaser.GameObjects.Text; alert: Phaser.GameObjects.Text };
   /** Lapisan hijau di atas rumah target: penanda "kasus terungkap". */
   private houseOverlay!: Phaser.GameObjects.Rectangle;
@@ -148,6 +150,9 @@ export class MapScene extends Phaser.Scene {
 
     this.buildWalkGrid(map);
     this.spawnNpcs();
+    const door = this.state.chapter.map.door;
+    this.owner = { ...this.makePerson('E', this.state.chapter.suspectName, door.x, door.y, 1.4, true, []), visible: false };
+    this.refreshOwnerTarget();
     this.buildBoss();
     const hs = this.state.chapter.map.house;
     this.houseOverlay = this.add.rectangle(hs.x, hs.y, hs.w, hs.h, 0x5affa0, 0.28).setOrigin(0, 0).setDepth(2).setVisible(false);
@@ -186,6 +191,7 @@ export class MapScene extends Phaser.Scene {
         this.state.advanceTime();
         Hud.updateClock(this.state);
         this.nearHouseNow = false;   // paksa cek ulang: slot baru berarti pengamatan baru
+        this.refreshOwnerTarget();
       }
     });
     this.time.addEvent({ delay: 1000, loop: true, callback: () => Hud.updateClockCountdown(this.state) });
@@ -197,6 +203,7 @@ export class MapScene extends Phaser.Scene {
     const cp = this.cartPosition();
     this.cart.setFlipX(this.cartPlaced ? this.cartFlip : this.facing === 'left').setPosition(Math.round(cp.x), Math.round(cp.y));
     this.npcs.forEach(n => this.updateNpcBehavior(n));
+    this.stepOwner();
     this.checkHouse();
     this.updateSuspicion();
     const busy = !!this.dialogueNpc || this.storyActive || this.overlayOpen;
@@ -788,6 +795,47 @@ export class MapScene extends Phaser.Scene {
     if (this.footBlocked(x, y)) return true;
     const H = this.state.chapter.map.house;
     return x > H.x - 25 && x < H.x + H.w + 25 && y > H.y - 25 && y < H.y + H.h + 25;
+  }
+
+  // ---------- pemilik rumah ----------
+  private randomFarPointFromHouse(): Pt {
+    let p = this.randomPointInWorld(), tries = 0;
+    const hc = { x: this.state.chapter.map.house.x + this.state.chapter.map.house.w / 2, y: this.state.chapter.map.house.y + this.state.chapter.map.house.h / 2 };
+    while (dist(p.x, p.y, hc.x, hc.y) < 280 && tries < 15) { p = this.randomPointInWorld(); tries++; }
+    return p;
+  }
+
+  /** Tentukan tujuan pemilik rumah sesuai jadwal. Jalurnya dihitung di stepOwner() (menghindari tembok). */
+  private refreshOwnerTarget(): void {
+    const o = this.owner;
+    if (this.state.currentStatus === 'kosong') {
+      if (!o.visible) { o.x = this.state.chapter.map.door.x; o.y = this.state.chapter.map.door.y; o.visible = true; }
+      o.target = this.randomFarPointFromHouse();
+    } else {
+      o.visible = true;
+      o.target = { x: this.state.chapter.map.door.x, y: this.state.chapter.map.door.y };
+    }
+    o.path = []; o.repathAt = 0;
+  }
+
+  private stepOwner(): void {
+    const o = this.owner;
+    const now = this.time.now;
+    if (o.path.length === 0) {
+      const d = dist(o.x, o.y, o.target.x, o.target.y);
+      if (d > 8) {
+        if (now >= o.repathAt) { o.repathAt = now + 1000; this.setDestination(o, o.target.x, o.target.y); }
+      } else if (this.state.currentStatus === 'ada') {
+        o.visible = false;
+      } else {
+        o.target = this.randomFarPointFromHouse();
+        o.repathAt = 0;
+      }
+    }
+    this.followPath(o);
+    this.applyPersonVisual(o);
+    o.sprite.setVisible(o.visible);
+    o.label?.setVisible(o.visible);
   }
 
   // ---------- perilaku NPC ----------
