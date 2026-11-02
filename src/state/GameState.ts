@@ -31,6 +31,19 @@ export class GameState {
   get currentSlot(): TimeSlot { return SLOTS[this.slotIdx]; }
   get currentStatus(): HouseStatus { return this.chapter.schedulePattern[this.currentSlot]; }
 
+  get hasNextChapter(): boolean { return this.chapterIndex < CHAPTERS.length - 1; }
+
+  /** Pindah ke chapter `idx` dan reset semua progres chapter (waktu, catatan, kecurigaan, status kasus). */
+  loadChapter(idx: number): void {
+    this.chapterIndex = idx;
+    this.slotIdx = 0;
+    this.suspicion = 0;
+    this.observationLog = emptyLog();
+    this.caseSolved = false;
+    this.missionReported = false;
+    this.nextTimeChange = Date.now() + TIME_INTERVAL_MS;
+  }
+
   advanceTime(): void {
     this.slotIdx = (this.slotIdx + 1) % SLOTS.length;
     this.nextTimeChange = Date.now() + TIME_INTERVAL_MS;

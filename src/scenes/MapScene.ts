@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import { GameState, Direction, TIME_INTERVAL_MS, dist, dirFromDelta } from '../state/GameState';
-import { NpcLine, DialogueLine, AMBIENT_NPCS } from '../state/Chapters';
+import { NpcLine, DialogueLine, AMBIENT_NPCS, CHAPTERS } from '../state/Chapters';
 import { Hud } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP, CHAR_HEIGHT_MAP } from '../state/Sprites';
-import { showMissionComplete } from '../ui/MissionComplete';
+import { showMissionComplete, showChapterTransition } from '../ui/MissionComplete';
 
 // Nama tileset (kiri) HARUS sama dgn nama di Tiled; key (kanan) HARUS sama dgn key di BootScene.
 const TILESETS = [
@@ -107,6 +107,9 @@ export class MapScene extends Phaser.Scene {
   private lastDoorHintAt = 0;
   /** Pemilik rumah target: terlihat berjalan keluar saat rumah "kosong", masuk dan hilang saat "ada orang". */
   private owner!: Person & { visible: boolean };
+  private tilemap: Phaser.Tilemaps.Tilemap | null = null;
+  private bossSprite!: Phaser.GameObjects.Sprite;
+  private bossPhone!: Phaser.GameObjects.Text;
   private boss!: { label: Phaser.GameObjects.Text; alert: Phaser.GameObjects.Text };
   /** Lapisan hijau di atas rumah target: penanda "kasus terungkap". */
   private houseOverlay!: Phaser.GameObjects.Rectangle;
@@ -128,49 +131,24 @@ export class MapScene extends Phaser.Scene {
 
   create(): void {
     this.state = this.registry.get('state') as GameState;
-    const { map: cfg } = this.state.chapter;
 
-    // ---- tilemap ----
-    const map = this.make.tilemap({ key: cfg.key });
-    const tilesets = TILESETS
-      .map(t => map.addTilesetImage(t.name, t.key))
-      .filter((t): t is Phaser.Tilemaps.Tileset => !!t);
-    if (tilesets.length !== TILESETS.length) {
-      console.warn(`[MapScene] Ada tileset yang gagal dipasang di '${cfg.key}' — cek nama tileset di Tiled & key texture di BootScene.`);
-    }
-    map.createLayer(LAYER_GROUND, tilesets)?.setDepth(0);
-    this.infraLayer = map.createLayer(LAYER_INFRA, tilesets)?.setDepth(1) ?? null;
-    map.createLayer(LAYER_EXTRA, tilesets)?.setDepth(6);
-
-    // ---- label rumah target ----
-    const h = cfg.house;
-    this.add.text(h.x + h.w / 2, h.y - 4, `🏠 Rumah ${this.state.chapter.suspectName}`, {
-      fontSize: '9px', color: '#ffffff', backgroundColor: '#000000aa', padding: { x: 3, y: 2 }
-    }).setOrigin(0.5, 1).setDepth(7);
-
+    // Objek-objek yang posisinya bergantung chapter dibuat sekali di sini; letaknya diatur di applyChapter().
+    const map = this.buildMap();
     this.buildWalkGrid(map);
-    this.spawnNpcs();
-    const door = this.state.chapter.map.door;
-    this.owner = { ...this.makePerson('E', this.state.chapter.suspectName, door.x, door.y, 1.4, true, []), visible: false };
-    this.refreshOwnerTarget();
     this.buildBoss();
-    const hs = this.state.chapter.map.house;
-    this.houseOverlay = this.add.rectangle(hs.x, hs.y, hs.w, hs.h, 0x5affa0, 0.28).setOrigin(0, 0).setDepth(2).setVisible(false);
-
-    // ---- pemain ----
-    this.player = this.add.sprite(cfg.spawn.x, cfg.spawn.y, 'sheet', 0)
-      .setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
-    this.applyFrame();
+    this.houseOverlay = this.add.rectangle(0, 0, 1, 1, 0x5affa0, 0.28).setOrigin(0, 0).setDepth(2).setVisible(false);
+    this.player = this.add.sprite(0, 0, 'sheet', 0).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
 
     // Gerobak bakso (sprite beranimasi). Gagang di sisi kiri gambar -> gerobak di kanan pemain; saat menghadap kiri di-flip.
     this.cart = this.add.sprite(0, 0, 'gerobak', 0).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
     this.cart.play('gerobak_idle');
 
     // ---- kamera ----
-    this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     this.cameras.main.setZoom(CAMERA_ZOOM);
     this.cameras.main.setRoundPixels(true);
     this.cameras.main.startFollow(this.player, true, 1, 1);
+
+    this.applyChapter(map);
 
     this.bindInput();
 
@@ -196,6 +174,57 @@ export class MapScene extends Phaser.Scene {
     });
     this.time.addEvent({ delay: 1000, loop: true, callback: () => Hud.updateClockCountdown(this.state) });
     this.showBriefing();
+  }
+
+  /** Bangun tilemap chapter aktif (peta lama dibuang dulu). Layer 'Infrastruktur' jadi tembok. */
+  private buildMap(): Phaser.Tilemaps.Tilemap {
+    this.tilemap?.destroy();
+    const cfg = this.state.chapter.map;
+    const map = this.make.tilemap({ key: cfg.key });
+    const tilesets = TILESETS
+      .map(ts => map.addTilesetImage(ts.name, ts.key))
+      .filter((ts): ts is Phaser.Tilemaps.Tileset => !!ts);
+    if (tilesets.length !== TILESETS.length) {
+      console.warn(`[MapScene] Ada tileset yang gagal dipasang di '${cfg.key}' — cek nama tileset di Tiled & key texture di BootScene.`);
+    }
+    map.createLayer(LAYER_GROUND, tilesets)?.setDepth(0);
+    this.infraLayer = map.createLayer(LAYER_INFRA, tilesets)?.setDepth(1) ?? null;
+    map.createLayer(LAYER_EXTRA, tilesets)?.setDepth(6);
+    this.tilemap = map;
+    return map;
+  }
+
+  /** Letakkan semua yang bergantung chapter: kamera, pemain, rumah, Bos, warga, pemilik rumah. */
+  private applyChapter(map: Phaser.Tilemaps.Tilemap): void {
+    const cfg = this.state.chapter.map;
+    this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    this.player.setPosition(cfg.spawn.x, cfg.spawn.y);
+    this.facing = 'down';
+    this.cartPlaced = false;   // chapter baru: gerobak kembali didorong
+    this.cameras.main.centerOn(cfg.spawn.x, cfg.spawn.y);
+    this.houseOverlay.setPosition(cfg.house.x, cfg.house.y).setSize(cfg.house.w, cfg.house.h).setVisible(false);
+    this.placeBoss();
+    this.boss.alert.setVisible(false);
+
+    this.dialogueNpc = null;
+    this.npcs.forEach(n => { n.sprite.destroy(); n.label?.destroy(); n.bubble?.destroy(); });
+    this.spawnNpcs();
+
+    if (this.owner) { this.owner.sprite.destroy(); this.owner.label?.destroy(); this.owner.bubble?.destroy(); }
+    this.owner = { ...this.makePerson('E', this.state.chapter.suspectName, cfg.door.x, cfg.door.y, 1.4, true, []), visible: false };
+    this.refreshOwnerTarget();
+    this.nearHouseNow = false;
+  }
+
+  /** Muat chapter berikutnya: reset state lalu bangun ulang peta & isinya (Scene yang sama dipakai ulang). */
+  private loadNextChapterIntoScene(): void {
+    this.state.loadChapter(this.state.chapterIndex + 1);
+    const map = this.buildMap();
+    this.buildWalkGrid(map);
+    this.applyChapter(map);
+    Hud.updateClock(this.state);
+    Hud.renderLog(this.state);
+    Hud.updateSuspicion(this.state);
   }
 
   update(_time: number, delta: number): void {
@@ -500,14 +529,22 @@ export class MapScene extends Phaser.Scene {
 
   // ---------- Bos & laporan ----------
   private buildBoss(): void {
-    const b = this.state.chapter.map.boss;
     const { frame } = charFrame('F', 'down', 0);
-    this.add.sprite(b.x, b.y, 'sheet', frame).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
-    this.add.text(b.x + 11, b.y - CHAR_HEIGHT_MAP * 0.6, '📞', { fontSize: '13px' }).setOrigin(0.5).setDepth(3);
-    const label = this.add.text(b.x, b.y + 10, 'Bos (Telepon)', { fontSize: '9px', color: '#eef2f7', fontFamily: 'monospace' }).setOrigin(0.5, 0).setDepth(3);
-    const alert = this.add.text(b.x, b.y - CHAR_HEIGHT_MAP - 8, '❗ Ada laporan', { fontSize: '9px', color: '#f5a623', fontFamily: 'monospace' })
+    this.bossSprite = this.add.sprite(0, 0, 'sheet', frame).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
+    this.bossPhone = this.add.text(0, 0, '📞', { fontSize: '13px' }).setOrigin(0.5).setDepth(3);
+    const label = this.add.text(0, 0, 'Bos (Telepon)', { fontSize: '9px', color: '#eef2f7', fontFamily: 'monospace' }).setOrigin(0.5, 0).setDepth(3);
+    const alert = this.add.text(0, 0, '❗ Ada laporan', { fontSize: '9px', color: '#f5a623', fontFamily: 'monospace' })
       .setOrigin(0.5).setDepth(3).setVisible(false);
     this.boss = { label, alert };
+  }
+
+  /** Pindahkan Bos (sprite, 📞, label) ke posisi Bos chapter aktif. */
+  private placeBoss(): void {
+    const b = this.state.chapter.map.boss;
+    this.bossSprite.setPosition(b.x, b.y);
+    this.bossPhone.setPosition(b.x + 11, b.y - CHAR_HEIGHT_MAP * 0.6);
+    this.boss.label.setPosition(b.x, b.y + 10);
+    this.boss.alert.setPosition(b.x, b.y - CHAR_HEIGHT_MAP - 8);
   }
 
   private nearBoss(): boolean {
@@ -515,19 +552,30 @@ export class MapScene extends Phaser.Scene {
     return dist(this.player.x, this.player.y, b.x, b.y) < BOSS_RADIUS;
   }
 
-  /** Lapor ke Bos: putar dialog penutup, lalu layar Mission Complete. */
+  /** Lapor ke Bos: dialog penutup, lalu pindah ke chapter berikutnya — atau layar Mission Complete kalau ini chapter terakhir. */
   private laporBos(): void {
     if (this.overlayOpen || this.storyActive || this.dialogueNpc) return;
     if (!this.nearBoss() || !this.state.caseSolved || this.state.missionReported) return;
     this.state.missionReported = true;
     Hud.setToast('📞 Menghubungi Bos...', '#00d9a3');
     const chapter = this.state.chapter;
-    this.playStory(chapter.debriefingLog, '✅ Complete', () => {
+    const hasNext = this.state.hasNextChapter;
+    const ctaLabel = hasNext ? 'Lanjut ke Chapter Berikutnya ▶' : '✅ Complete';
+    this.playStory(chapter.debriefingLog, ctaLabel, () => {
       this.overlayOpen = true;
-      showMissionComplete({ chapterId: chapter.id, chapterTitle: chapter.title }, () => {
-        // Tamat. Menu utama baru ada di versi berikutnya, jadi untuk sementara muat ulang halaman = main lagi dari awal.
-        window.location.reload();
-      });
+      if (hasNext) {
+        const next = CHAPTERS[this.state.chapterIndex + 1];
+        showChapterTransition(
+          { chapterId: next.id, title: next.title },
+          () => this.loadNextChapterIntoScene(),          // peta diganti saat layar tertutup
+          () => { this.overlayOpen = false; this.showBriefing(); }
+        );
+      } else {
+        showMissionComplete({ chapterId: chapter.id, chapterTitle: chapter.title }, () => {
+          // Tamat. Menu utama baru ada di versi berikutnya, jadi untuk sementara muat ulang halaman = main lagi dari awal.
+          window.location.reload();
+        });
+      }
     });
   }
 
