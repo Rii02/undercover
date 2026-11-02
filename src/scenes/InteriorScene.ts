@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GameState, dist, dirFromDelta, Direction } from '../state/GameState';
 import { Hud } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP } from '../state/Sprites';
+import { StealthSystem } from '../systems/StealthSystem';
 
 /**
  * Interior sekarang dibangun dari peta Tiled (CHAPTERS[i].interiorMap), bukan lagi dari add.rectangle.
@@ -63,6 +64,10 @@ export class InteriorScene extends Phaser.Scene {
   private clues: Spot[] = [];
   private stairsArmed = true;
   private ready = false;
+  /** Tantangan CCTV / bodyguard (hanya kalau chapter punya `stealth`). */
+  private stealth: StealthSystem | null = null;
+  /** Objek Tiled cctv* / guard* untuk penempatan manual. */
+  private hazardObjs: Phaser.Types.Tilemaps.TiledObject[] = [];
 
   private keys: Record<string, boolean> = {};
   private readonly keyMap: Record<string, string> = {
@@ -86,6 +91,7 @@ export class InteriorScene extends Phaser.Scene {
   create(): void {
     this.state = this.registry.get('state') as GameState;
     this.keys = {};
+    this.stealth = null;
     this.stairsArmed = true;
     this.ready = false;
     this.activateView();
@@ -104,6 +110,20 @@ export class InteriorScene extends Phaser.Scene {
     this.avatar = { x: this.spawn.x, y: this.spawn.y, sprite, walking: false, timer: 0, dir: 'down' };
     this.highlight = this.add.graphics().setDepth(5);
 
+    // Tantangan stealth (CCTV / bodyguard) sesuai CHAPTERS[i].stealth.
+    const stealthCfg = this.state.chapter.stealth;
+    if (stealthCfg) {
+      this.stealth = new StealthSystem({
+        scene: this, map: this.tilemap, cfg: stealthCfg,
+        isSolid: (x, y) => this.isSolid(x, y),
+        groundLayer: LAYER_GROUND,
+        spawn: this.spawn, goals: this.hacks, stairs: this.stairs, objects: this.hazardObjs,
+        onSendBack: () => this.sendBackToSpawn(),
+        onEject: () => this.ejectByAlarm()
+      });
+      if (stealthCfg.intro) Hud.setToast(stealthCfg.intro, '#f5a623');
+    }
+
     // Kamera mengikuti pemain, dibatasi area peta yang benar-benar berisi tile.
     const cam = this.cameras.main;
     cam.setZoom(ZOOM).setBackgroundColor(0x111419).setRoundPixels(true);
@@ -119,6 +139,7 @@ export class InteriorScene extends Phaser.Scene {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     this.events.once('shutdown', () => {
+      this.stealth?.destroy(); this.stealth = null;
       window.removeEventListener('keydown', this.onKeyDown);
       window.removeEventListener('keyup', this.onKeyUp);
       this.events.off(Phaser.Scenes.Events.RESUME, this.onResume);
@@ -168,7 +189,7 @@ export class InteriorScene extends Phaser.Scene {
   }
 
   private readObjects(map: Phaser.Tilemaps.Tilemap): void {
-    this.door = null; this.hacks = []; this.stairs = []; this.clues = [];
+    this.door = null; this.hacks = []; this.stairs = []; this.clues = []; this.hazardObjs = [];
     const layer = map.getObjectLayer(OBJECT_LAYER);
     if (!layer) { console.warn(`[InteriorScene] Layer objek '${OBJECT_LAYER}' tidak ada di peta interior.`); return; }
     const T = map.tileWidth;
@@ -179,6 +200,7 @@ export class InteriorScene extends Phaser.Scene {
       else if (nm === 'door') this.door = spot;
       else if (nm.startsWith('hack')) this.hacks.push(spot);
       else if (nm.startsWith('clue')) { spot.teks = getProp(o, 'teks'); this.clues.push(spot); }
+      else if (nm.startsWith('cctv') || nm.startsWith('guard')) this.hazardObjs.push(o);
       else if (nm.startsWith('stairs')) {
         // properti 'tujuan' berbentuk "lantai 2 (titik 27,6)" -> tile tujuan (27,6), titik tengah tile.
         const m = /titik\s*(\d+)\s*,\s*(\d+)/.exec(getProp(o, 'tujuan') ?? '');
@@ -245,9 +267,27 @@ export class InteriorScene extends Phaser.Scene {
 
   private tryOpenHacking(): void {
     if (!this.nearest(this.hacks, HACK_RADIUS)) return;
+    if (this.stealth?.isAlerted()) {
+      Hud.setToast('🚨 Terlalu berbahaya untuk membobol sekarang — lolos dulu dari kejaran!', '#ff6b6b');
+      return;
+    }
     this.scene.pause();
     // Data eksplisit: Phaser mempertahankan data lama jika launch() tanpa data.
     this.scene.launch('Hacking', { mode: 'story' });
+  }
+
+  /** Dipanggil StealthSystem saat pemain tertangkap: kembali ke titik masuk. */
+  private sendBackToSpawn(): void {
+    this.avatar.x = this.spawn.x; this.avatar.y = this.spawn.y;
+    this.stairsArmed = true;
+    this.cameras.main.centerOn(this.avatar.x, this.avatar.y);
+  }
+
+  /** Peringatan habis: pemain terusir. Kecurigaan warga dinaikkan supaya di peta ia segera "dipaksa menjauh" dari rumah. */
+  private ejectByAlarm(): void {
+    this.state.suspicion = 90;
+    this.exitHouse();
+    Hud.setToast('🚨 ALARM PENUH! Kamu kabur dari rumah. Warga mulai curiga — menjauh dari sini!', '#ff6b6b');
   }
 
   private exitHouse(): void {
@@ -275,7 +315,7 @@ export class InteriorScene extends Phaser.Scene {
     Hud.setToast('🪜 Kamu naik/turun tangga.', '#f5a623');
   }
 
-  update(): void {
+  update(_time: number, delta: number): void {
     if (!this.ready) return;
     let dx = 0, dy = 0;
     if (this.keys.up) dy -= SPEED;
@@ -295,6 +335,7 @@ export class InteriorScene extends Phaser.Scene {
     this.avatar.sprite.setFrame(fi).setFlipX(flipX).setPosition(Math.round(this.avatar.x), Math.round(this.avatar.y));
 
     this.updateStairs();
+    this.stealth?.update(this.avatar.x, this.avatar.y, delta);
 
     // Petunjuk & tombol sesuai apa yang ada di dekat pemain
     const hack = this.nearest(this.hacks, HACK_RADIUS);
@@ -305,6 +346,8 @@ export class InteriorScene extends Phaser.Scene {
     else if (clue?.teks) Hud.interiorHint.textContent = '🔎 ' + clue.teks;
     else if (nearDoor) Hud.interiorHint.textContent = '🚪 Pintu keluar. Tekan E atau tombol Keluar.';
     else Hud.interiorHint.textContent = this.state.chapter.interiorIntro;
+    const danger = this.stealth?.statusHint();
+    if (danger) Hud.interiorHint.textContent = danger;
     Hud.computerBtn.disabled = !hack;
 
     // Kotak penanda berkedip di titik hack saat pemain dekat

@@ -3,7 +3,7 @@
 Game detektif 2D top-down (TypeScript + [Phaser 3](https://phaser.io) + [Vite](https://vitejs.dev)).
 Kamu menyamar sebagai tukang bakso di desa untuk menyelidiki transfer mencurigakan.
 
-## Versi 0.12 — Chapter 2–6
+## Versi 0.13 — Stealth: CCTV dan penjaga
 
 Fitur sampai versi ini:
 
@@ -19,6 +19,7 @@ Fitur sampai versi ini:
 10. Gerobak didorong bersama pemain; F menaruh/mengambil; wajib ditaruh dan ditinggalkan sebelum masuk rumah target; warga sesekali membeli bakso (menurunkan kecurigaan)
 11. Pak Herman terlihat di peta: jadwal kosong = keluar dan berjalan jauh; ada orang = pulang dan menghilang
 12. Enam chapter lengkap (peta, interior, level hacking, warga, bukti) dengan transisi antar chapter; label rumah target dihapus agar tidak membocorkan jawaban
+13. Interior chapter 4–6 punya CCTV berputar dan penjaga patroli; terlihat = dikembalikan ke pintu masuk, peringatan penuh = diusir
 
 ## Menjalankan
 

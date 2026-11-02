@@ -56,6 +56,42 @@ export interface MapConfig {
   door: { x: number; y: number };
 }
 
+/** Tantangan stealth di interior (lihat systems/StealthSystem.ts). Isi `cctv` dan/atau `guards`; kosongkan = tanpa tantangan. */
+export interface StealthConfig {
+  /** CCTV berputar. count = jumlah kamera (ditempatkan otomatis di rute, atau pakai objek 'cctv*' di Tiled). */
+  cctv?: {
+    count: number;
+    /** Jangkauan pandang (px dunia). */
+    range?: number;
+    /** Lebar kerucut pandang (derajat). */
+    fovDeg?: number;
+    /** Total sudut sapuan kamera (derajat). */
+    sweepDeg?: number;
+    /** Waktu satu siklus sapuan (ms). Makin besar = kamera makin pelan. */
+    periodMs?: number;
+    /** Lama terus terlihat lensa sebelum dianggap tertangkap (ms). Tanpa bar deteksi; kecil = nyaris langsung. Default 300. */
+    spotMs?: number;
+    /** Jatah kesempatan tertangkap CCTV. Setiap tertangkap 1 kesempatan hangus; habis = terusir dari rumah. Default 2. */
+    chances?: number;
+  };
+  /** Bodyguard patroli. count = jumlah penjaga (otomatis, atau pakai objek 'guard*' di Tiled). */
+  guards?: {
+    count: number;
+    /** charKey spritesheet (lihat Sprites.ts). Default 'G'. */
+    charKey?: string;
+    patrolSpeed?: number;
+    chaseSpeed?: number;
+    range?: number;
+    fovDeg?: number;
+    /** Radius patroli acak di sekitar posisi awal (dalam tile). */
+    wanderTiles?: number;
+  };
+  /** Jumlah peringatan sebelum pemain diusir dari rumah. Default 3. */
+  maxStrikes?: number;
+  /** Toast saat masuk interior. */
+  intro?: string;
+}
+
 /** Satu chapter = satu objek konfigurasi. Tambah chapter baru cukup dengan menambah entri di CHAPTERS. */
 export interface ChapterConfig {
   id: number;
@@ -94,6 +130,8 @@ export interface ChapterConfig {
   npcs: NpcConfig[];
   /** Jumlah warga acak (ambient) tambahan di peta. Default: AMBIENT_COUNT di MapScene.ts. */
   ambientCount?: number;
+  /** Tantangan stealth di interior (CCTV / bodyguard). Opsional. */
+  stealth?: StealthConfig;
 }
 
 // ---- helper penulisan dialog biar ringkas ----
@@ -375,6 +413,11 @@ export const CHAPTERS: ChapterConfig[] = [
     },
     schedulePattern: { Pagi: 'ada', Siang: 'kosong', Sore: 'ada', Malam: 'ada' },
     hackLevel: 4,
+    stealth: {
+      maxStrikes: 3,
+      cctv: { count: 2, range: 120, fovDeg: 50, sweepDeg: 180, periodMs: 6500, spotMs: 300, chances: 2 },
+      intro: '📹 Ada CCTV berputar di lorong. Tunggu lensanya berpaling ke tembok, lalu lewat. Tepat di bawah kamera ada titik buta.'
+    },
     interiorMap: { key: 'int4', file: 'assets/maps/int_ch4_rumah_tanpa_nama.json' },
     interiorTitle: 'Rumah Tanpa Nama',
     interiorLabel: 'Ruang Kendali',
@@ -453,6 +496,11 @@ export const CHAPTERS: ChapterConfig[] = [
     },
     schedulePattern: { Pagi: 'kosong', Siang: 'ada', Sore: 'ada', Malam: 'kosong' },
     hackLevel: 5,
+    stealth: {
+      maxStrikes: 3,
+      guards: { count: 2, charKey: 'G', patrolSpeed: 0.7, chaseSpeed: 1.15, range: 100, fovDeg: 70, wanderTiles: 5 },
+      intro: '👮 Dua bodyguard berkeliling di dalam kos. Kalau terlihat, lari dan putus pandangan sampai mereka menyerah.'
+    },
     interiorMap: { key: 'int5', file: 'assets/maps/int_ch5_kos_operator07.json' },
     interiorTitle: 'Kos Operator 07',
     interiorLabel: 'Kamar Atas Operator',
@@ -546,6 +594,12 @@ export const CHAPTERS: ChapterConfig[] = [
     },
     schedulePattern: { Pagi: 'ada', Siang: 'kosong', Sore: 'kosong', Malam: 'ada' },
     hackLevel: 6,
+    stealth: {
+      maxStrikes: 3,
+      cctv: { count: 3, range: 130, fovDeg: 50, sweepDeg: 190, periodMs: 5200, spotMs: 300, chances: 2 },
+      guards: { count: 2, charKey: 'G', patrolSpeed: 0.8, chaseSpeed: 1.25, range: 110, fovDeg: 75, wanderTiles: 6 },
+      intro: '🚨 Kamera di tiap lorong dan dua penjaga. Kalau CCTV menangkapmu, alarm memanggil penjaga ke posisimu.'
+    },
     interiorMap: { key: 'int6', file: 'assets/maps/int_ch6_gudang_blackbox.json' },
     interiorTitle: 'Gudang Bekas Koperasi',
     interiorLabel: 'Ruang Bawah Tanah',
