@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GameState, dist, dirFromDelta, Direction } from '../state/GameState';
 import { Hud } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP } from '../state/Sprites';
-import { StealthSystem } from '../systems/StealthSystem';
+import { StealthSystem } from '../systems/StealthSystem'
 
 /**
  * Interior sekarang dibangun dari peta Tiled (CHAPTERS[i].interiorMap), bukan lagi dari add.rectangle.
@@ -20,6 +20,7 @@ import { StealthSystem } from '../systems/StealthSystem';
  *      clue*            petunjuk; properti 'teks' ditampilkan di baris petunjuk saat pemain dekat
  */
 
+const VIEW_W = 460, VIEW_H = 340;   // ukuran kanvas di panel interior (tetap, kamera yang menggulir)
 const ZOOM = 2;                     // tile 16px terlalu kecil di kanvas ini, jadi diperbesar 2x
 const SPEED = 1.5;                  // px dunia per frame (2x zoom = 3px layar); posisi gambar dibulatkan di update()
 
@@ -66,7 +67,7 @@ export class InteriorScene extends Phaser.Scene {
   private ready = false;
   /** Tantangan CCTV / bodyguard (hanya kalau chapter punya `stealth`). */
   private stealth: StealthSystem | null = null;
-  /** Objek Tiled cctv* / guard* untuk penempatan manual. */
+  /** Objek Tiled cctv* / guard* utk penempatan manual. */
   private hazardObjs: Phaser.Types.Tilemaps.TiledObject[] = [];
 
   private keys: Record<string, boolean> = {};
@@ -152,12 +153,16 @@ export class InteriorScene extends Phaser.Scene {
       el.onpointerleave = () => { this.keys[dir] = false; };
     };
     this.ready = true;
-    bindHold('btnUp', 'up'); bindHold('btnDown', 'down'); bindHold('btnLeft', 'left'); bindHold('btnRight', 'right');
+    bindHold('i_btnUp', 'up'); bindHold('i_btnDown', 'down'); bindHold('i_btnLeft', 'left'); bindHold('i_btnRight', 'right');
   }
 
-  /** Tampilkan HUD interior (class `inside` di <body>). Dipanggil di create() dan tiap kali Scene ini resume (mis. batal dari minigame). */
+  /** Pasang kanvas game ke slot panel interior & tampilkan panel yang benar. Dipanggil di create() dan tiap kali Scene ini resume (mis. batal dari minigame hacking). */
   private activateView(): void {
-    document.body.classList.add('inside');
+    this.scale.resize(VIEW_W, VIEW_H);
+    document.getElementById('interiorCanvasSlot')!.appendChild(this.game.canvas);
+    document.getElementById('mapView')!.style.display = 'none';
+    document.getElementById('interiorView')!.style.display = 'block';
+    document.getElementById('hackView')!.style.display = 'none';
   }
 
   // ------------------------------------------------------------------ peta
@@ -200,13 +205,13 @@ export class InteriorScene extends Phaser.Scene {
       else if (nm === 'door') this.door = spot;
       else if (nm.startsWith('hack')) this.hacks.push(spot);
       else if (nm.startsWith('clue')) { spot.teks = getProp(o, 'teks'); this.clues.push(spot); }
-      else if (nm.startsWith('cctv') || nm.startsWith('guard')) this.hazardObjs.push(o);
       else if (nm.startsWith('stairs')) {
         // properti 'tujuan' berbentuk "lantai 2 (titik 27,6)" -> tile tujuan (27,6), titik tengah tile.
         const m = /titik\s*(\d+)\s*,\s*(\d+)/.exec(getProp(o, 'tujuan') ?? '');
         if (m) spot.tujuan = { x: Number(m[1]) * T + T / 2, y: Number(m[2]) * T + T / 2 };
         this.stairs.push(spot);
       }
+      else if (nm.startsWith('cctv') || nm.startsWith('guard')) this.hazardObjs.push(o);
     }
   }
 
@@ -272,7 +277,7 @@ export class InteriorScene extends Phaser.Scene {
       return;
     }
     this.scene.pause();
-    // Data eksplisit: Phaser mempertahankan data lama jika launch() tanpa data.
+    // Data eksplisit: Phaser mempertahankan data lama jika launch() tanpa data, sehingga mode 'sim' dari sesi simulasi bisa bocor ke Story.
     this.scene.launch('Hacking', { mode: 'story' });
   }
 
@@ -292,7 +297,8 @@ export class InteriorScene extends Phaser.Scene {
 
   private exitHouse(): void {
     Hud.setToast('🚶 Kamu keluar dari rumah tersangka.', '#f5a623');
-    document.body.classList.remove('inside');
+    document.getElementById('interiorView')!.style.display = 'none';
+    document.getElementById('mapView')!.style.display = 'block';
     this.scene.stop();
     this.scene.resume('Map');
   }

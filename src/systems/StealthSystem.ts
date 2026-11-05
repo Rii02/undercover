@@ -771,7 +771,7 @@ export class StealthSystem {
   // ------------------------------------------------------------------ HUD (elemen DOM dibuat otomatis, tidak perlu ubah index.html)
 
   private createHud(): void {
-    const slot = document.getElementById('mapCanvasSlot');
+    const slot = document.getElementById('interiorCanvasSlot');
     if (!slot) return;
     document.getElementById('stealthHud')?.remove();
     if (getComputedStyle(slot).position === 'static') slot.style.position = 'relative';

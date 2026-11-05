@@ -3,47 +3,105 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Undercover: Kasus Kejahatan Siber</title>
+<title>Undercover: Kasus Kejahatan Siber - Chapter 1</title>
 <style>
-  :root{ --bg:#0a0e1a; --panel:#161d2e; --accent:#f5a623; --off:#3d4759; --wire:#5b6b7f; --text:#eef2f7; --term-bg:#001208; --term-text:#3dff6a; --term-dim:#1e8f3e; }
+  :root{
+    --bg:#0a0e1a; --panel:#161d2e; --accent:#f5a623; --on:#ffd93d; --off:#3d4759;
+    --wire:#5b6b7f; --wireOn:#ffd93d; --text:#eef2f7; --good:#00d9a3; --bad:#ff6b6b;
+    --term-bg:#001208; --term-text:#3dff6a; --term-dim:#1e8f3e;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#eef0fb; --panel:#ffffff; --accent:#f5a623; --on:#ffd93d; --off:#c7c9de;
+      --wire:#9aa4b5; --wireOn:#e8a900; --text:#22243a; --good:#00b389; --bad:#e0433d;
+    }
+  }
   *{box-sizing:border-box; touch-action:manipulation}
-  html,body{height:100%; margin:0}
-  body{background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:8px; display:flex; justify-content:center}
-  .panel{position:relative; background:var(--panel); border-radius:14px; padding:12px; width:100%; max-width:960px; box-shadow:0 4px 20px rgba(0,0,0,.2)}
-  .statrow{display:flex; justify-content:space-between; align-items:center; font-size:.95rem; margin-bottom:8px}
-  #susWrap{width:100%; height:12px; background:var(--off); border-radius:999px; overflow:hidden; margin:2px 0 10px}
-  #susBar{height:100%; width:0%; background:#ff6b6b; transition:width .15s}
-  #mapCanvasSlot{width:100%; height:min(60dvh, 600px); min-height:240px; image-rendering:pixelated}
-  #mapCanvasSlot canvas{border-radius:10px; display:block}
-  #toast{min-height:1.4em; font-weight:600; text-align:center; color:var(--accent); margin-top:8px; font-size:.85rem}
-  #logBtn{border:2px solid var(--accent); background:transparent; color:var(--accent); border-radius:8px; padding:4px 10px; cursor:pointer; font-weight:700}
-  .dpad{display:grid; grid-template-columns:repeat(3,48px); grid-template-rows:repeat(3,48px); gap:4px; justify-content:center; margin-top:8px}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    padding:8px env(safe-area-inset-right,8px) env(safe-area-inset-bottom,16px) env(safe-area-inset-left,16px);
+    padding-top:calc(8px + env(safe-area-inset-top,0px));
+  }
+  h1{font-size:1.15rem; margin:4px 0 0; text-align:center}
+  #sub{opacity:.7; font-size:.78rem; margin:0; text-align:center}
+  .wrap{display:flex; flex-direction:column; gap:10px; align-items:center; max-width:none; width:100%; flex:1}
+  .panel{background:var(--panel); border-radius:14px; padding:12px; box-shadow:0 4px 20px rgba(0,0,0,.2); width:100%}
+  canvas,.gamecanvas-slot canvas{border-radius:10px; display:block; width:100%; max-width:100%; height:auto; margin:0 auto; touch-action:none}
+  .gamecanvas-slot{image-rendering:pixelated; max-width:100%; margin:0 auto}
+  #mapCanvasSlot{width:100%; height:calc(100dvh - 260px); min-height:240px}
+  #interiorCanvasSlot{width:100%; height:calc(100dvh - 300px); min-height:240px}
+  #mapCanvasSlot canvas, #interiorCanvasSlot canvas{width:100%; height:100%; object-fit:contain}
+  .statrow{display:flex; justify-content:space-between; align-items:center; font-size:clamp(.8rem, 1.2vw + 1.2vh, 1.5rem); margin-bottom:.4em; gap:8px}
+  .statrow small{font-size:.8em}
+  #susWrap{width:100%; height:clamp(10px, 1.6vh, 20px); background:var(--off); border-radius:999px; overflow:hidden; margin:.3em 0 .6em}
+  #susBar{height:100%; width:0%; background:var(--bad); transition:width .15s}
+  #logTable{border-collapse:collapse; width:100%; font-size:clamp(.72rem, 1vw + 1vh, 1.3rem); margin-top:4px}
+  #logTable td,#logTable th{border:1px solid var(--wire); padding:.3em .5em; text-align:center}
+  #actionRow{display:flex; gap:8px; margin-top:8px}
+  .actBtn{flex:1; border:none; border-radius:10px; padding:10px; font-weight:700; font-size:.8rem; cursor:pointer; background:var(--off); color:var(--text)}
+  .actBtn:disabled{opacity:.35; cursor:not-allowed}
+  #baksoBtn{background:var(--accent); color:#2a1900}
+  #enterBtn{background:var(--good); color:#08251c}
+  .dpad{display:grid; grid-template-columns:repeat(3,44px); grid-template-rows:repeat(3,44px); gap:4px; justify-content:center; margin-top:8px}
   .dpad button{border:none; border-radius:10px; background:var(--off); color:var(--text); font-size:1rem; cursor:pointer}
   .dpad button:active{background:var(--accent)}
-  .actBtn{width:100%; margin-top:8px; border:none; border-radius:10px; padding:10px; font-weight:700; cursor:pointer; background:var(--accent); color:#2a1900}
-  .actBtn:disabled{opacity:.35; cursor:not-allowed}
-  #exitHouseBtn{border:2px solid var(--accent); background:transparent; color:var(--accent); border-radius:8px; padding:4px 10px; cursor:pointer; font-weight:700}
-  #interiorHint{min-height:1.4em; text-align:center; font-size:.8rem; opacity:.85; margin-top:4px}
-  /* Panel HUD berganti antara peta dan interior lewat class `inside` di <body> */
-  #interiorView,#interiorActions,#interiorHint{display:none}
-  body.inside #interiorView{display:block}
-  body.inside #interiorActions,body.inside #interiorHint{display:block}
-  body.inside #mapView,body.inside #mapActions{display:none}
-  @media (min-width:760px){ .dpad,.actBtn{display:none} }
-  #dialogBox{display:none; position:absolute; left:12px; right:12px; bottom:12px; z-index:20; background:var(--panel); border:3px solid var(--accent); border-radius:14px; padding:14px 16px; box-shadow:0 8px 26px rgba(0,0,0,.5)}
+  #toast{min-height:1.3em; font-size:clamp(.8rem, 1vw + 1vh, 1.3rem); text-align:center; font-weight:600; color:var(--accent); margin-top:4px}
+
+  /* ==== Layout dua-kolom di dalam tiap panel: kolom kanvas game + kolom sidebar kontrol.
+     Di mobile (default) kolom ditumpuk vertikal; di desktop (lihat media query di bawah)
+     jadi berdampingan supaya layar lebar kepakai penuh. ==== */
+  .gameLayout{display:flex; flex-direction:column; gap:10px}
+  .gameCol{position:relative; width:100%}
+  .sideCol{display:flex; flex-direction:column; gap:8px}
+
+  /* ==== Dialog box NPC (ala RPG/visual novel) — dipakai juga utk dialog cerita Bos<->Aku ==== */
+  #mapView{position:relative}
+  #dialogBox{display:none; position:absolute; left:8px; right:8px; bottom:12px; z-index:20;
+    background:var(--panel); border:3px solid var(--accent); border-radius:14px; padding:16px 18px;
+    box-shadow:0 8px 26px rgba(0,0,0,.5)}
   #dialogBox.show{display:block}
-  #dialogName{font-weight:700; color:var(--accent); margin-bottom:6px}
-  #dialogText{line-height:1.5; min-height:3em; cursor:pointer}
-  #dialogCtaBtn{display:none; width:100%; border:none; border-radius:8px; padding:12px 6px; font-weight:700; cursor:pointer; background:#00d9a3; color:#08251c}
-  #dialogHint{font-size:.75rem; opacity:.7; text-align:right; margin-top:6px}
-  #logPopup{display:none; position:absolute; inset:0; z-index:30; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:12px; border-radius:14px}
+  #dialogName{font-weight:700; font-size:clamp(1rem, 1.6vw + 1vh, 1.5rem); color:var(--accent); margin-bottom:6px}
+  #dialogText{font-size:clamp(1rem, 1.5vw + 1vh, 1.45rem); line-height:1.5; min-height:4.5em; max-height:45vh; overflow-y:auto; margin-bottom:10px; cursor:pointer}
+  #dialogCtaBtn{display:none; width:100%; border:none; border-radius:8px; padding:14px 6px; font-weight:700; font-size:clamp(.95rem, 1.2vw + 1vh, 1.3rem); cursor:pointer; background:var(--good); color:#08251c}
+  #dialogHint{display:none; font-size:clamp(.8rem, .9vw + .8vh, 1.05rem); opacity:.7; text-align:right; cursor:pointer; padding:4px 0}
+
+  /* ==== Tombol info bulat (pojok kanan atas kanvas) + popup catatan pengamatan ==== */
+  #logInfoBtn{position:absolute; top:8px; right:8px; z-index:15; width:34px; height:34px; border-radius:50%;
+    border:2px solid var(--accent); background:rgba(10,14,26,.78); color:var(--accent);
+    font-weight:800; font-size:1.05rem; font-family:Georgia,serif; font-style:italic; line-height:1;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+    box-shadow:0 2px 8px rgba(0,0,0,.45); backdrop-filter:blur(2px)}
+  #logInfoBtn:hover,#logInfoBtn:active{background:var(--accent); color:#2a1900}
+  #logPopup{display:none; position:absolute; inset:0; z-index:30; background:rgba(0,0,0,.55);
+    align-items:center; justify-content:center; padding:12px; border-radius:14px}
   #logPopup.show{display:flex}
-  #logCard{background:var(--panel); border:2px solid var(--accent); border-radius:12px; padding:12px 14px; width:100%; max-width:460px}
-  #logHead{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:700; color:var(--accent); font-size:.9rem}
-  #logClose{border:none; background:var(--off); color:var(--text); border-radius:50%; width:26px; height:26px; cursor:pointer}
-  #logTable{border-collapse:collapse; width:100%; font-size:.8rem}
-  #logTable td,#logTable th{border:1px solid var(--wire); padding:.3em .5em; text-align:center}
-  #logNote{font-size:.7rem; opacity:.65; margin:8px 0 0}
+  #logPopupCard{background:var(--panel); border:2px solid var(--accent); border-radius:12px; padding:12px 14px;
+    width:100%; max-width:460px; box-shadow:0 8px 28px rgba(0,0,0,.5)}
+  #logPopupHead{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;
+    font-weight:700; font-size:.85rem; color:var(--accent)}
+  #logPopupClose{border:none; background:var(--off); color:var(--text); border-radius:50%; width:26px; height:26px;
+    cursor:pointer; font-size:.8rem; padding:0}
+  #logPopupNote{font-size:.68rem; opacity:.65; margin:8px 0 0}
+
+  /* ==== Panel briefing & chapter-selesai (kini disatukan ke #dialogBox sbg obrolan) ==== */
+  .bigActBtn{width:100%; border:none; border-radius:10px; padding:12px; font-weight:700; font-size:.85rem;
+    cursor:pointer; background:var(--good); color:#08251c}
+
+
+  /* ==== Popup pilih mode (Story / Simulasi) ==== */
+  #modeOverlay{display:none; position:fixed; inset:0; z-index:1000; background:rgba(5,8,16,.92); align-items:center; justify-content:center; padding:16px}
+  #modeOverlay.show{display:flex}
+  #modeCard{background:var(--panel); border:3px solid var(--accent); border-radius:20px; padding:clamp(24px,4vh,44px) clamp(22px,3vw,48px); width:100%; max-width:760px; box-shadow:0 14px 48px rgba(0,0,0,.65); text-align:center}
+  #modeCard h2{margin:0 0 8px; font-size:clamp(1.5rem,2.4vw + 1vh,2.4rem); line-height:1.2}
+  #modeCard p{margin:0 0 clamp(16px,3vh,30px); opacity:.75; font-size:clamp(1rem,1vw + 1vh,1.35rem)}
+  .modeBtn{display:block; width:100%; text-align:left; border:3px solid var(--wire); border-radius:16px; padding:clamp(18px,3vh,30px) clamp(18px,2.4vw,32px); margin-top:clamp(12px,2vh,20px); cursor:pointer; background:var(--bg); color:var(--text); font-family:inherit; transition:transform .12s, border-color .12s}
+  .modeBtn b{display:block; font-size:clamp(1.3rem,1.6vw + 1vh,1.9rem); margin-bottom:8px}
+  .modeBtn small{display:block; opacity:.8; font-size:clamp(.95rem,.9vw + .9vh,1.25rem); line-height:1.5}
+  .modeBtn:hover,.modeBtn:focus-visible{border-color:var(--accent); outline:none; transform:translateY(-2px)}
+  #modeStoryBtn{border-color:var(--accent)}
+
   /* ==== File manager bukti (tampilan file manager biasa, terang) ==== */
   #fmOverlay{display:none; position:fixed; inset:0; z-index:900; background:rgba(15,18,28,.6); align-items:center; justify-content:center; padding:12px}
   #fmOverlay.show{display:flex}
@@ -100,9 +158,63 @@
   .ctrl-btn2{flex:1; border:2px solid var(--term-text); border-radius:6px; padding:9px; cursor:pointer; font-weight:700; font-size:.8rem; background:#00220f; color:var(--term-text); font-family:'Courier New',monospace}
   #hackStatus{min-height:1.3em; font-weight:700; text-align:center; font-size:.8rem; margin-top:8px}
   #hackBody{display:flex; flex-direction:column; gap:8px}
-  /* Saat minigame hacking tampil, panel utama disembunyikan */
-  body.hacking .panel:not(#hackView){display:none}
-  @media (min-width:760px){
+
+  /* ==================================================================
+     DESKTOP: layar lebar dapat tata letak penuh & lebih lega — kanvas
+     game diperbesar 2x (kelipatan bulat spy pixel-art ttp tajam) dan
+     kontrol dipindah jadi sidebar di samping, bukan ditumpuk ke bawah.
+     Di bawah breakpoint ini tampilan otomatis balik ke gaya mobile lama.
+     ================================================================== */
+  @media (min-width: 760px){
+    /* ================================================================
+       Pendekatan sebelumnya (kunci 100vh + overflow:hidden + rantai
+       flex:1 di banyak level) ternyata rapuh: kalau salah satu level
+       meleset dikit, isinya bukan menyusut tapi malah KEPOTONG (nggak
+       kelihatan sama sekali, spt tabel & notif di laporan sblmnya).
+       Jadi pendekatannya diganti: TIDAK ada lagi overflow:hidden/kunci
+       tinggi — body boleh scroll sbg jaring pengaman kalau2 memang
+       nggak muat, tapi TINGGI kanvas dibatasi eksplisit via vh/calc
+       (bkn dihitung tdk langsung lewat flex) shg tabel & notif di
+       bawahnya selalu kebagian tempat & kanvas jarang perlu scroll di
+       layar desktop pada umumnya.
+
+       Kanvas peta jg TIDAK dipaksa 1 rasio aspek tetap (360:300) lagi:
+       lebar & tinggi resolusi game-nya (bukan cuma CSS-nya) disesuaikan
+       dinamis ke ukuran wadah oleh MapScene.ts (fitViewToContainer,
+       dipanggil live via ResizeObserver) — jadi kanvasnya betulan jadi
+       persegi panjang landscape lebar atau lebih tinggi sesuai device,
+       bkn gambar rasio tetap yg cuma di-letterbox. object-fit:contain
+       di bawah cuma jaring pengaman kalau ukuran CSS & resolusi game
+       sempat beda sepersekian detik saat baru resize. */
+    body{padding:10px 14px; gap:0}
+        .wrap{max-width:none; width:100%; gap:10px}
+    .panel{padding:10px 14px; border-radius:14px}
+
+    /* Di desktop kontrol gerak & interaksi dipakai lewat keyboard (WASD/panah + E),
+       jadi dpad & tombol aksi disentuhan (mobile-only) disembunyikan. */
+    .dpad, #actionRow{display:none}
+
+    .gameLayout{flex-direction:column; align-items:stretch; gap:8px}
+    .gameCol{width:100%}
+    .sideCol{width:100%; max-width:none; margin:0 auto}
+
+    /* Selector ID dipakai supaya menang atas rule mobile "#mapCanvasSlot{width:360px}"
+       di atas (sama-sama ID, jadi harus ditandingi eksplisit di sini). Tinggi kotak
+       dibatasi vh/calc — perkiraan ruang non-kanvas (judul+statrow+notif+tabel+padding)
+       ± 300px utk peta, ± 260px utk interior — supaya elemen di bawahnya selalu muat. */
+    #mapCanvasSlot{width:100%; max-width:none; height:calc(100dvh - 150px); margin:0 auto}
+    #interiorCanvasSlot{width:100%; max-width:none; height:calc(100dvh - 120px); margin:0 auto}
+    #mapCanvasSlot canvas, #interiorCanvasSlot canvas{width:100%; height:100%; object-fit:contain}
+
+    /* Interior tidak punya konten sidebar lagi setelah dpad/actionRow disembunyikan
+       (tombol Bobol Komputer ada di dalam #actionRow juga), jadi sidebar-nya ditutup
+       total dan kanvas rumah dipakai sepenuh panel. */
+    #interiorView .sideCol{display:none}
+
+    #logTable{width:100%; margin-top:2px}
+
+    #dialogBox{left:50%; right:auto; transform:translateX(-50%); width:min(92%, 900px); bottom:16px}
+
     /* ---- Minigame hacking / simulasi: pakai hampir seluruh layar desktop ---- */
     #hackView{min-height:calc(100dvh - 20px); padding:18px 28px}
     #hackView h2{font-size:1.35rem; margin-bottom:10px}
@@ -123,54 +235,92 @@
 </style>
 </head>
 <body>
-<div class="panel">
-  <div id="mapView">
-  <div class="statrow">
-    <span><span id="clockIcon">🌅</span> <span id="clockLabel">Pagi</span> <small id="clockCountdown" style="opacity:.6">(ganti dlm 25s)</small></span>
-    <button id="logBtn" type="button" title="Catatan pengamatan rumah">📋 Catatan</button>
-  </div>
-  <div style="font-size:.8rem; margin-bottom:2px">😰 Kecurigaan warga</div>
-  <div id="susWrap"><div id="susBar"></div></div>
-  </div>
-  <div id="interiorView">
-    <div class="statrow"><b id="interiorHeader">🏚️ Di Dalam Rumah</b><button id="exitHouseBtn" type="button">🚪 Keluar</button></div>
-  </div>
 
-  <div id="mapCanvasSlot"></div>
-  <div id="toast">&nbsp;</div>
-  <div id="interiorHint"></div>
+<!-- Elemen judul dipertahankan tapi disembunyikan: Hud.setChapterHeader() di kode game
+     mengisi teksnya lewat id, jadi kalau elemennya tidak ada game bisa error. -->
+<h1 id="title" style="display:none">🕵️ Undercover: Kasus Kejahatan Siber</h1>
+<p id="sub" style="display:none">Chapter 1 — Penyamaran Tukang Bakso</p>
 
-  <div id="mapActions">
-    <button class="actBtn" id="talkBtn" disabled>🗣️ Ajak Bicara (E)</button>
-    <button class="actBtn" id="enterBtn" disabled>🚪 Coba Masuk (E)</button>
-    <button class="actBtn" id="cartBtn">🛒 Taruh Gerobak (F)</button>
-    <button class="actBtn" id="reportBtn" disabled>📞 Lapor ke Bos (E)</button>
-  </div>
-  <div id="interiorActions">
-    <button class="actBtn" id="computerBtn" disabled>💻 Bobol Komputer (E)</button>
-  </div>
-  <div class="dpad">
-    <div></div><button id="btnUp">▲</button><div></div>
-    <button id="btnLeft">◀</button><div></div><button id="btnRight">▶</button>
-    <div></div><button id="btnDown">▼</button><div></div>
-  </div>
+<div class="wrap">
+  <!-- ===== MAP VIEW ===== -->
+  <div class="panel" id="mapView">
+    <div class="statrow">
+      <span><span id="clockIcon">🌅</span> <span id="clockLabel">Pagi</span> <small id="clockCountdown" style="opacity:.6">(ganti dlm 25s)</small></span>
+      <span>😰 Kecurigaan</span>
+    </div>
+    <div id="susWrap"><div id="susBar"></div></div>
 
-  <div id="dialogBox">
-    <div id="dialogName">Nama NPC</div>
-    <div id="dialogText">...</div>
-    <button id="dialogCtaBtn">▶ Lanjut</button>
-    <div id="dialogHint">tekan E / ketuk untuk lanjut ▸</div>
-  </div>
+    <div class="gameLayout">
+      <div class="gameCol">
+        <div id="mapCanvasSlot" class="gamecanvas-slot"></div>
+        <button id="logInfoBtn" type="button" aria-label="Lihat catatan pengamatan rumah" title="Catatan pengamatan rumah">i</button>
+        <div id="toast">&nbsp;</div>
 
-  <div id="logPopup" role="dialog" aria-modal="true" aria-label="Catatan pengamatan rumah">
-    <div id="logCard">
-      <div id="logHead"><span>📋 Catatan Pengamatan Rumah</span><button id="logClose" type="button" aria-label="Tutup">✕</button></div>
-      <table id="logTable"></table>
-      <p id="logNote">Dekati rumah target di tiap waktu untuk mengisi catatan.</p>
+        <!-- Kotak dialog: dipakai baik utk ngobrol dgn NPC warga, maupun dialog cerita Bos<->Aku (briefing/lapor) -->
+        <div id="dialogBox">
+          <div id="dialogName">Nama NPC</div>
+          <div id="dialogText">...</div>
+          <button id="dialogCtaBtn">▶ Lanjut</button>
+          <div id="dialogHint">tekan E / ketuk buat lanjut ▸</div>
+        </div>
+      </div>
+
+      <div class="sideCol">
+        <div id="actionRow">
+          <button class="actBtn" id="baksoBtn" disabled>🗣️ Ajak Bicara (E)</button>
+          <button class="actBtn" id="enterBtn" disabled>🚪 Masuk Diam-diam (E)</button>
+          <button class="actBtn" id="reportBtn" disabled style="background:var(--good); color:#08251c">📞 Lapor Bos (E)</button>
+        </div>
+        <div class="dpad">
+          <div></div><button id="btnUp">▲</button><div></div>
+          <button id="btnLeft">◀</button><div></div><button id="btnRight">▶</button>
+          <div></div><button id="btnDown">▼</button><div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Popup catatan pengamatan: tabel #logTable dipindah ke sini (diisi Hud.renderLog seperti biasa) -->
+    <div id="logPopup" role="dialog" aria-modal="true" aria-label="Catatan pengamatan rumah">
+      <div id="logPopupCard">
+        <div id="logPopupHead">
+          <span>📋 Catatan Pengamatan Rumah</span>
+          <button id="logPopupClose" type="button" aria-label="Tutup">✕</button>
+        </div>
+        <table id="logTable"></table>
+        <p id="logPopupNote">Dekati rumah target di tiap waktu untuk mengisi catatan.</p>
+      </div>
     </div>
   </div>
-</div>
 
+  <!-- (popup catatan pengamatan ada di dalam #mapView, lihat di bawah) -->
+
+  <!-- ===== INTERIOR RUMAH VIEW ===== -->
+  <div class="panel" id="interiorView" style="display:none">
+    <div class="statrow">
+      <span id="interiorHeader">🏚️ Di Dalam Rumah Tersangka</span>
+      <button class="small" id="exitHouseBtn" style="border-radius:8px;border:1px solid var(--wire);background:transparent;color:var(--text);padding:3px 8px;cursor:pointer">🚪 Keluar Rumah</button>
+    </div>
+
+    <div class="gameLayout">
+      <div class="gameCol">
+        <div id="interiorCanvasSlot" class="gamecanvas-slot"></div>
+        <div id="interiorHint">&nbsp;</div>
+      </div>
+
+      <div class="sideCol">
+        <div id="actionRow">
+          <button class="actBtn" id="computerBtn" disabled style="background:var(--good); color:#08251c">💻 Bobol Komputer (E)</button>
+        </div>
+        <div class="dpad">
+          <div></div><button id="i_btnUp">▲</button><div></div>
+          <button id="i_btnLeft">◀</button><div></div><button id="i_btnRight">▶</button>
+          <div></div><button id="i_btnDown">▼</button><div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== HACKING VIEW ===== -->
   <div class="panel" id="hackView">
     <h2>💻 TERMINAL AKSES — MEMBOBOL FIREWALL</h2>
     <p class="termline">&gt; Menyusup ke rumah target selagi kosong...</p>
@@ -204,6 +354,7 @@
       </div>
     </div>
   </div>
+</div>
 
 <!-- ===== FILE MANAGER BUKTI (diisi oleh HackingScene.showFileManager) ===== -->
 <div id="fmOverlay" role="dialog" aria-modal="true" aria-labelledby="fmTitle">
@@ -221,15 +372,31 @@
   </div>
 </div>
 
+<!-- ===== POPUP PILIH MODE (ditampilkan oleh MenuScene.ts) ===== -->
+<div id="modeOverlay" role="dialog" aria-modal="true" aria-labelledby="modeTitle">
+  <div id="modeCard">
+    <h2 id="modeTitle">🕵️ Undercover: Kasus Kejahatan Siber</h2>
+    <p>Pilih mode permainan</p>
+    <button class="modeBtn" id="modeStoryBtn" type="button">
+      <b>📖 Story</b>
+      <small>Masuk ke cerita inti: menyamar, mengamati target, membobol sirkuit, dan melapor ke Bos.</small>
+    </button>
+    <button class="modeBtn" id="modeSimBtn" type="button">
+      <b>🔧 Simulasi</b>
+      <small>Bebas merancang rangkaian gerbang logika (AND, OR, NOT, XOR, NAND, NOR) tanpa soal atau tantangan.</small>
+    </button>
+  </div>
+</div>
+
 <script>
-  // Popup catatan: buka lewat tombol, tutup lewat ✕, klik latar gelap, atau Esc.
+  // Popup catatan pengamatan: buka lewat tombol "i", tutup lewat ✕, klik latar gelap, atau Esc.
   (function(){
-    var popup = document.getElementById('logPopup');
+    var popup=document.getElementById('logPopup');
     function setOpen(o){ popup.classList.toggle('show', o); }
-    document.getElementById('logBtn').addEventListener('click', function(){ setOpen(!popup.classList.contains('show')); });
-    document.getElementById('logClose').addEventListener('click', function(){ setOpen(false); });
-    popup.addEventListener('click', function(e){ if (e.target === popup) setOpen(false); });
-    window.addEventListener('keydown', function(e){ if (e.key === 'Escape') setOpen(false); });
+    document.getElementById('logInfoBtn').addEventListener('click', function(){ setOpen(!popup.classList.contains('show')); });
+    document.getElementById('logPopupClose').addEventListener('click', function(){ setOpen(false); });
+    popup.addEventListener('click', function(e){ if(e.target===popup) setOpen(false); });
+    window.addEventListener('keydown', function(e){ if(e.key==='Escape') setOpen(false); });
   })();
 </script>
 <script type="module" src="/src/main.ts"></script>

@@ -70,7 +70,8 @@ export class HackingScene extends Phaser.Scene {
     this.canvas.width = CANVAS_W * RES; this.canvas.height = CANVAS_H * RES;
     this.ctx = this.canvas.getContext('2d')!;
 
-    document.body.classList.add('hacking');
+    document.getElementById('interiorView')!.style.display = 'none';
+    if (this.sim) document.getElementById('mapView')!.style.display = 'none';
     document.getElementById('hackView')!.style.display = 'block';
     this.setupModeUi();
 
@@ -466,18 +467,19 @@ export class HackingScene extends Phaser.Scene {
   private teardown(): void {
     this.canvas.removeEventListener('pointerdown', this.pointerHandler);
     document.getElementById('hackView')!.style.display = 'none';
-    document.body.classList.remove('hacking');
   }
 
   private cancelHacking(): void {
     this.teardown();
+    document.getElementById('interiorView')!.style.display = 'block';
     this.scene.stop();
     this.scene.resume('Interior');
   }
 
   private backToMap(): void {
     this.teardown();
-    document.body.classList.remove('inside');
+    document.getElementById('interiorView')!.style.display = 'none';
+    document.getElementById('mapView')!.style.display = 'block';
     Hud.setToast('💻 Bukti berhasil diambil. Sekarang temui Bos untuk melapor.', '#00d9a3');
     this.scene.stop();
     this.scene.stop('Interior');

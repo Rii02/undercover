@@ -1,11 +1,15 @@
 import Phaser from 'phaser';
-import { GameState, Direction, TIME_INTERVAL_MS, dist, dirFromDelta } from '../state/GameState';
-import { NpcLine, DialogueLine, AMBIENT_NPCS, CHAPTERS } from '../state/Chapters';
+import { GameState, dist, dirFromDelta, Direction, TIME_INTERVAL_MS } from '../state/GameState';
+import { NpcConfig, NpcLine, DialogueLine, AMBIENT_NPCS, CHAPTERS } from '../state/Chapters';
 import { Hud } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP, CHAR_HEIGHT_MAP } from '../state/Sprites';
 import { showMissionComplete, showChapterTransition } from '../ui/MissionComplete';
+import { mountStoryMenuButton } from '../ui/StoryMenu';
 
-// Nama tileset (kiri) HARUS sama dgn nama di Tiled; key (kanan) HARUS sama dgn key di BootScene.
+// ---------- Peta dari Tiled ----------
+// Tiap chapter punya peta sendiri (CHAPTERS[i].map di Chapters.ts: key, file, spawn, boss, rumah, pintu).
+// Semua peta memakai 4 tileset yang sama; nama (kiri) HARUS sama dgn nama tileset di Tiled,
+// key (kanan) HARUS sama dgn key yang di-load di BootScene.ts.
 const TILESETS = [
   { name: 'city', key: 'tiles_city' },
   { name: 'tiny-town', key: 'tiles_tiny' },
@@ -13,23 +17,32 @@ const TILESETS = [
   { name: 'overlay-suasana', key: 'tiles_overlay' }
 ];
 const LAYER_GROUND = 'Tile Layer 1';
-const LAYER_INFRA = 'Infrastruktur';   // bangunan & pohon -> juga dipakai sebagai tembok (collision)
-const LAYER_EXTRA = 'Tambahan';        // hiasan & overlay -> digambar DI ATAS karakter
+const LAYER_INFRA = 'Infrastruktur';   // bangunan & pohon -> juga dipakai sbg tembok (collision)
+const LAYER_EXTRA = 'Tambahan';        // hiasan + overlay suasana -> digambar DI ATAS karakter
+const OBJECT_LAYER = 'Objek';          // (opsional) layer objek Tiled; kalau ada, menimpa titik dari Chapters.ts
 
-const CAMERA_ZOOM = 1.5;
-const PLAYER_SPEED = 180;              // px per detik
-const NEAR_HOUSE_RADIUS = 50;
-const TALK_RADIUS = 44;
-/** Jarak horizontal pusat gerobak dari pemain (px dunia). */
+let WORLD_W = 1280, WORLD_H = 960;     // diisi ulang dari ukuran peta di buildMap()
+const VIEW_W = 360, VIEW_H = 300;
+
+// Nilai di bawah ini DIISI ULANG tiap chapter dimuat (dari CHAPTERS[i].map, lalu layer 'Objek' kalau ada).
+export const HOUSE = { x: 0, y: 0, w: 0, h: 0 };
+export const DOOR_SPOT = { x: 0, y: 0 };
+
+/** Mode kalibrasi pintu: buka game dengan `?debug=1` di URL. Lihat debugSetDoor() di bawah. */
+const DEBUG_DOOR = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug');
+const BOSS = { x: 0, y: 0 };
+const SPAWN = { x: 0, y: 0 };
+
+/** Jumlah warga acak (ambient) per chapter kalau chapter tidak menentukan sendiri. */
+const AMBIENT_COUNT = 5;
+
+/** Jarak horizontal pusat gerobak dari avatar (px dunia). */
 const CART_OFFSET_X = 20 * CHAR_SCALE_MAP;
-/** Gerobak yang sudah ditaruh bisa diambil lagi kalau pemain lebih dekat dari ini. */
+/** Gerobak yang sudah ditaruh bisa diambil lagi kalau avatar lebih dekat dari ini. */
 const CART_PICKUP_RADIUS = 56;
-/** Syarat masuk rumah target: gerobak sudah ditaruh DAN pemain sudah menjauh sekurang-kurangnya sejauh ini darinya. */
+/** Syarat masuk rumah target: gerobak sudah ditaruh DAN avatar sudah menjauh sekurang-kurangnya sejauh ini darinya. */
 const CART_LEAVE_DIST = 90;
-const BOSS_RADIUS = 40;               // jarak maksimal ke Bos agar "Lapor" aktif
-const DOOR_RADIUS = 34;               // jarak maksimal ke pintu agar "Coba Masuk" aktif               // jarak maksimal untuk ngobrol dengan warga          // jarak ke tepi rumah agar pengamatan tercatat
 
-/** Peta dunia: pemain berjalan, jam berganti, rumah target diamati, dan warga bisa diajak ngobrol. */
 interface Pt { x: number; y: number }
 
 /** Perilaku NPC sipil:
@@ -56,24 +69,21 @@ interface Person {
   timer: number;
   dir: Direction;
   speed: number;
-  /** Obrolan Aku <-> NPC. dialogueIndex = baris yang sedang tampil. */
+  /** Obrolan Aku <-> NPC (kosong utk avatar/pemilik rumah/boss). dialogueIndex = baris yang sedang tampil. */
   dialogues: NpcLine[];
   dialogueIndex: number;
   behavior: Behavior;
-  /** Timestamp (this.time.now) kapan NPC boleh mengambil keputusan baru. */
+  /** Timestamp (this.time.now) kapan NPC boleh mengambil keputusan baru (mis. mulai ke gerobak). */
   nextDecisionAt: number;
-  /** Timestamp berakhirnya aktivitas saat ini (idle/chatting) atau batas waktu (toChat). */
+  /** Timestamp berakhirnya aktivitas saat ini (idle/chatting/buying) atau batas waktu (toChat/toCart). */
   until: number;
   /** Lawan bicara saat toChat/chatting. */
   partner: Person | null;
-  /** Kapan jalur boleh dihitung ulang (dipakai untuk target yang bergerak). */
+  /** Kapan jalur boleh dihitung ulang (dipakai utk target yang bergerak: gerobak, pemilik rumah). */
   repathAt: number;
   /** Hitungan frame tertahan tembok; kalau terlalu lama, jalur dibatalkan. */
   stuck: number;
 }
-
-/** Jumlah warga acak (ambient) per chapter kalau chapter tidak menentukan sendiri. */
-const AMBIENT_COUNT = 5;
 
 const DIRS: ReadonlyArray<[number, number, number]> = [
   [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
@@ -84,46 +94,51 @@ const LOOK_DIRS: Direction[] = ['down', 'left', 'right', 'up'];
 
 export class MapScene extends Phaser.Scene {
   private state!: GameState;
-  private infraLayer: Phaser.Tilemaps.TilemapLayer | null = null;
-  private player!: Phaser.GameObjects.Sprite;
-  private facing: Direction = 'down';
-  private walkFrame: 0 | 1 = 0;
-  private nextStepAt = 0;
-  private nearHouseNow = false;
+  private avatar!: Person;
   private npcs: Person[] = [];
-  private dialogueNpc: Person | null = null;
-  // ---- grid jalan (dari layer Infrastruktur) untuk pathfinding NPC ----
+  private owner!: Person & { visible: boolean };
+  private boss!: { sprite: Phaser.GameObjects.Sprite; phone: Phaser.GameObjects.Text; label: Phaser.GameObjects.Text; alert: Phaser.GameObjects.Text };
+  private houseOverlay!: Phaser.GameObjects.Rectangle;
+  private tilemap: Phaser.Tilemaps.Tilemap | null = null;
+  /** Layer bangunan/pohon — tile yg terisi di sini dianggap tembok (tidak bisa dilewati avatar). */
+  private infraLayer: Phaser.Tilemaps.TilemapLayer | null = null;
+  /** Posisi awal NPC dari layer 'Objek' (key: 'npc_<nama>' huruf kecil, spasi jadi '_'). */
+  private npcSpots: Record<string, { x: number; y: number }> = {};
+  // ---- grid jalan (dari layer Infrastruktur) utk pathfinding NPC ----
   private walkGrid: Uint8Array = new Uint8Array(0);
   private gridW = 0;
   private gridH = 0;
   private tileSize = 16;
-  /** Indeks cell yang terhubung dengan titik spawn — titik acak NPC hanya diambil dari sini supaya selalu terjangkau. */
+  /** Indeks cell yang terhubung dgn titik spawn — titik acak NPC hanya diambil dari sini supaya selalu terjangkau. */
   private reachCells: number[] = [];
   private cart!: Phaser.GameObjects.Sprite;
-  /** Gerobak sedang ditaruh di tanah (true) atau didorong pemain (false). */
+  /** Gerobak sedang ditaruh di tanah (true) atau didorong avatar (false). */
   private cartPlaced = false;
   private cartSpot: Pt = { x: 0, y: 0 };
   private cartFlip = false;
+  private cartBtn: HTMLButtonElement | null = null;
   private lastDoorHintAt = 0;
-  /** Pemilik rumah target: terlihat berjalan keluar saat rumah "kosong", masuk dan hilang saat "ada orang". */
-  private owner!: Person & { visible: boolean };
-  private tilemap: Phaser.Tilemaps.Tilemap | null = null;
-  private bossSprite!: Phaser.GameObjects.Sprite;
-  private bossPhone!: Phaser.GameObjects.Text;
-  private boss!: { label: Phaser.GameObjects.Text; alert: Phaser.GameObjects.Text };
-  /** Lapisan hijau di atas rumah target: penanda "kasus terungkap". */
-  private houseOverlay!: Phaser.GameObjects.Rectangle;
-  /** Layar Mission Complete sedang tampil: kunci input peta. */
-  private overlayOpen = false;
-  // ---- dialog cerita Bos <-> Aku ----
+  // Kalibrasi pintu (hanya aktif dgn ?debug=1)
+  private debugGfx: Phaser.GameObjects.Graphics | null = null;
+  private debugText: Phaser.GameObjects.Text | null = null;
+  private debugDoors: Record<number, { x: number; y: number }> = {};
+  private keys: Record<string, boolean> = {};
+  private countdownTimer?: Phaser.Time.TimerEvent;
+  private resizeObserver?: ResizeObserver;
+
+  // ---- state dialog NPC ----
+  private dialogueOpen = false;
+  private dialogueNpc: Person | null = null;
+
+  // ---- state dialog cerita Bos <-> Aku (briefing chapter & lapor ke Bos) ----
   private storyActive = false;
   private storyLines: DialogueLine[] = [];
   private storyIndex = 0;
   private storyCta = '';
   private storyOnDone: (() => void) | null = null;
-  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
-  private pad: Record<Direction, boolean> = { up: false, down: false, left: false, right: false };
+
+  /** Layar "Mission Complete" / transisi chapter sedang tampil — kunci input peta (scene sedang di-pause, tapi listener window tetap hidup). */
+  private overlayOpen = false;
 
   constructor() {
     super('Map');
@@ -132,256 +147,246 @@ export class MapScene extends Phaser.Scene {
   create(): void {
     this.state = this.registry.get('state') as GameState;
 
-    // Objek-objek yang posisinya bergantung chapter dibuat sekali di sini; letaknya diatur di applyChapter().
-    const map = this.buildMap();
-    this.buildWalkGrid(map);
-    this.buildBoss();
-    this.houseOverlay = this.add.rectangle(0, 0, 1, 1, 0x5affa0, 0.28).setOrigin(0, 0).setDepth(2).setVisible(false);
-    this.player = this.add.sprite(0, 0, 'sheet', 0).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
+    // Scene ini bisa dimulai ulang (tamat -> Menu -> Story lagi). Phaser memakai ulang instance yang sama,
+    // jadi field class TIDAK diinisialisasi ulang — reset manual di sini supaya tidak membawa sisa permainan lama.
+    this.tilemap = null; this.infraLayer = null; this.npcSpots = {}; this.npcs = [];
+    this.cartPlaced = false; this.cartFlip = false; this.cartSpot = { x: 0, y: 0 };
+    this.dialogueOpen = false; this.dialogueNpc = null;
+    this.storyActive = false; this.storyLines = []; this.storyIndex = 0; this.storyOnDone = null;
+    this.overlayOpen = false; this.keys = {}; this.lastDoorHintAt = 0;
+    Hud.hideDialogue(); Hud.hideStoryLine();
+    Hud.updateSuspicion(this.state);
 
-    // Gerobak bakso (sprite beranimasi). Gagang di sisi kiri gambar -> gerobak di kanan pemain; saat menghadap kiri di-flip.
+    this.activateView();
+    // Saat Map di-pause lalu di-resume (mis. setelah keluar rumah, atau setelah panel briefing ditutup),
+    // kanvas & panel harus di-reparent ulang. Listener dilepas saat shutdown agar tidak menumpuk tiap restart.
+    const onResume = () => this.activateView();
+    this.events.on(Phaser.Scenes.Events.RESUME, onResume);
+
+    // Pantau perubahan ukuran wadah #mapCanvasSlot (resize jendela, buka/tutup
+    // devtools, dll) supaya kamera ikut menyesuaikan ukurannya secara live —
+    // bukan cuma sekali waktu panel dibuka.
+    const mapSlotEl = document.getElementById('mapCanvasSlot');
+    if (mapSlotEl && typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.fitViewToContainer());
+      this.resizeObserver.observe(mapSlotEl);
+    }
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.resizeObserver?.disconnect();
+      this.events.off(Phaser.Scenes.Events.RESUME, onResume);
+    });
+
+    this.buildMap();                     // tilemap chapter aktif (juga mengisi WORLD_W/H, spawn, boss, rumah, pintu)
+    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+    this.fitViewToContainer();           // hitung ulang zoom dgn ukuran dunia yg sebenarnya
+    this.buildHouse();
+    this.buildBoss();
+
+    this.avatar = this.makePerson('A', 'Kamu', SPAWN.x, SPAWN.y, 3, false, []);
+    this.avatar.label?.destroy(); // avatar tidak perlu label nama
+    this.cameras.main.setRoundPixels(true);   // cegah getar/seam tile saat kamera bergeser (zoom pecahan)
+    this.cameras.main.startFollow(this.avatar.sprite, true, 1, 1);
+    // Gerobak bakso (sprite beranimasi). Gagang di sisi kiri gambar -> gerobak di kanan avatar; saat menghadap kiri di-flip ke kiri.
     this.cart = this.add.sprite(0, 0, 'gerobak', 0).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
     this.cart.play('gerobak_idle');
 
-    // ---- kamera ----
-    this.cameras.main.setZoom(CAMERA_ZOOM);
-    this.cameras.main.setRoundPixels(true);
-    this.cameras.main.startFollow(this.player, true, 1, 1);
-
-    this.applyChapter(map);
+    this.spawnNpcsFromChapter();
+    this.owner = { ...this.makePerson('E', this.state.chapter.suspectName, DOOR_SPOT.x, DOOR_SPOT.y, 1.4, true, []), visible: false };
+    this.refreshOwnerTarget();
 
     this.bindInput();
-
-    // ---- jam & HUD ----
-    Hud.hideDialogue();
-    Hud.talkBtn.onclick = () => this.handleInteract();
-    Hud.enterBtn.onclick = () => this.tryEnter();
-    Hud.cartBtn.onclick = () => this.toggleCart();
-    Hud.reportBtn.onclick = () => this.laporBos();
-    this.events.on(Phaser.Scenes.Events.RESUME, () => { document.body.classList.remove('inside'); Hud.renderLog(this.state); });
-    Hud.dialogText.onclick = () => this.advance();
-    Hud.dialogCtaBtn.onclick = () => this.advanceStory();
+    if (DEBUG_DOOR) {
+      this.debugGfx = this.add.graphics().setDepth(60);
+      this.debugText = this.add.text(0, 0, '', { fontSize: '9px', color: '#ffffff', backgroundColor: '#000000cc', padding: { x: 3, y: 2 } }).setDepth(61).setOrigin(0.5, 1);
+      this.debugDoors = {};
+      Hud.setToast('🛠️ Mode kalibrasi pintu: berdiri tepat di depan pintu rumah, tekan K untuk menetapkan posisi pintu.', '#ff9f43');
+    }
     Hud.updateClock(this.state);
     Hud.renderLog(this.state);
+
     this.time.addEvent({
       delay: TIME_INTERVAL_MS, loop: true,
       callback: () => {
         this.state.advanceTime();
         Hud.updateClock(this.state);
-        this.nearHouseNow = false;   // paksa cek ulang: slot baru berarti pengamatan baru
         this.refreshOwnerTarget();
       }
     });
-    this.time.addEvent({ delay: 1000, loop: true, callback: () => Hud.updateClockCountdown(this.state) });
-    this.showBriefing();
+    this.countdownTimer = this.time.addEvent({
+      delay: 1000, loop: true, callback: () => Hud.updateClockCountdown(this.state)
+    });
+
+    Hud.baksoBtn.onclick = () => { const n = this.nearestNPC(); if (n) this.openDialogue(n); };
+    Hud.enterBtn.onclick = () => this.tryEnter();
+    // Tombol layar sentuh untuk F (dibuat otomatis di sebelah tombol "Coba Masuk"; tidak perlu ubah HTML).
+    this.cartBtn = (document.getElementById('cartBtn') as HTMLButtonElement | null) ?? (() => {
+      const b = document.createElement('button');
+      b.id = 'cartBtn';
+      b.type = 'button';
+      b.className = Hud.enterBtn.className;
+      Hud.enterBtn.insertAdjacentElement('afterend', b);
+      return b;
+    })();
+    this.cartBtn.onclick = () => this.toggleCart();
+    Hud.setToast('🛒 Tekan F untuk menaruh / mengambil gerobak. Taruh gerobak dulu sebelum masuk rumah target.', '#f5a623');
+    Hud.reportBtn.onclick = () => this.laporBos();
+    Hud.dialogCtaBtn.onclick = () => this.advanceStory();
+    // Ketuk baris teks/hint jg bisa lanjutkan obrolan (alternatif tombol E utk layar sentuh).
+    const tapAdvance = () => {
+      if (this.storyActive) this.advanceStory();
+      else if (this.dialogueOpen) this.advanceDialogue();
+    };
+    Hud.dialogText.addEventListener('click', tapAdvance);
+    Hud.dialogHint.addEventListener('click', tapAdvance);
+    // Tombol "☰ Menu" (kembali ke menu utama) selama mode Story.
+    const unmountMenuBtn = mountStoryMenuButton(() => this.returnToMenu());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      unmountMenuBtn();
+      Hud.dialogText.removeEventListener('click', tapAdvance);
+      Hud.dialogHint.removeEventListener('click', tapAdvance);
+    });
+
+    // Chapter 1 baru dimulai -> tampilkan briefing dulu, jeda scene sampai pemain tekan "Mulai Misi".
+    // Tidak boleh panggil this.scene.pause() langsung di sini: SceneManager memaksa status scene
+    // jadi RUNNING tepat setelah create() ini selesai, jadi pause() akan tertimpa. Menunggu event
+    // CREATE (yang ditembakkan setelah status di-set RUNNING) memastikan pause-nya benar-benar nempel.
+    this.events.once(Phaser.Scenes.Events.CREATE, () => this.showBriefingThenPause());
   }
 
-  /** Bangun tilemap chapter aktif (peta lama dibuang dulu). Layer 'Infrastruktur' jadi tembok. */
-  private buildMap(): Phaser.Tilemaps.Tilemap {
-    this.tilemap?.destroy();
+  // ---------- setup helpers ----------
+  /** Pasang kanvas game ke slot panel peta & tampilkan panel yang benar. Dipanggil di create() dan tiap kali Scene ini resume. */
+  private activateView(): void {
+    // Urutan penting: tampilkan #mapView DULU (baru elemen #mapCanvasSlot punya ukuran
+    // nyata via CSS, sebelumnya display:none => clientWidth/Height selalu 0), baru
+    // sesuaikan resolusi kamera ke ukuran wadah itu, baru pindahkan kanvasnya kesana.
+    document.getElementById('mapView')!.style.display = 'block';
+    document.getElementById('interiorView')!.style.display = 'none';
+    document.getElementById('hackView')!.style.display = 'none';
+    this.fitViewToContainer();
+    document.getElementById('mapCanvasSlot')!.appendChild(this.game.canvas);
+  }
+
+  /** Kamera TIDAK dikunci ke satu rasio aspek tetap (360x300) lagi — disesuaikan
+   *  dinamis ke ukuran nyata elemen #mapCanvasSlot (dipanggil tiap kali panel ini
+   *  aktif, dan tiap kali wadahnya berubah ukuran via ResizeObserver di create()).
+   *  Jadi kanvasnya boleh jadi persegi panjang landscape lebar ATAU lebih tinggi,
+   *  menyesuaikan device — bukan dipaksa satu bentuk lalu di-letterbox. Dibatasi
+   *  MIN/MAX supaya tetap wajar & tidak pernah melebihi ukuran dunia (WORLD_W/H),
+   *  supaya kamera selalu masih bisa mengikuti avatar tanpa nampilin area kosong
+   *  di luar batas dunia. */
+  private fitViewToContainer(): void {
+    const slot = document.getElementById('mapCanvasSlot');
+    const w = Math.round(slot?.clientWidth || 0) || VIEW_W;
+    const h = Math.round(slot?.clientHeight || 0) || VIEW_H;
+    // Resolusi game = ukuran piksel wadah persis, jadi tidak ada celah/letterbox di kiri-kanan.
+    if (w !== this.scale.width || h !== this.scale.height) {
+      this.scale.resize(w, h);
+      this.cameras.main?.setSize(w, h);
+    }
+    // Zoom kamera: tinggi area dunia yang terlihat ± VISIBLE_H px. Zoom tidak boleh lebih kecil
+    // dari yang dibutuhkan agar area terlihat tetap muat di dalam dunia (WORLD_W x WORLD_H),
+    // supaya tidak pernah muncul area kosong di luar batas peta.
+    const VISIBLE_H = 400;
+    const zoom = Math.max(h / VISIBLE_H, w / WORLD_W, h / WORLD_H);
+    this.cameras.main?.setZoom(zoom);
+  }
+
+  /** Bangun peta Tiled milik chapter aktif. Dipanggil di create() dan tiap pindah chapter
+   *  (peta lama dibuang dulu). Depth: ground(0) < bangunan(1) < overlay rumah(2) < karakter(3) < hiasan atas(6). */
+  private buildMap(): void {
+    this.tilemap?.destroy();   // juga menghancurkan semua layer-nya
+    this.tilemap = null;
+    this.infraLayer = null;
+
     const cfg = this.state.chapter.map;
+    SPAWN.x = cfg.spawn.x; SPAWN.y = cfg.spawn.y;
+    BOSS.x = cfg.boss.x; BOSS.y = cfg.boss.y;
+    DOOR_SPOT.x = cfg.door.x; DOOR_SPOT.y = cfg.door.y;
+    Object.assign(HOUSE, cfg.house);
+
     const map = this.make.tilemap({ key: cfg.key });
     const tilesets = TILESETS
-      .map(ts => map.addTilesetImage(ts.name, ts.key))
-      .filter((ts): ts is Phaser.Tilemaps.Tileset => !!ts);
+      .map(t => map.addTilesetImage(t.name, t.key))
+      .filter((t): t is Phaser.Tilemaps.Tileset => !!t);
     if (tilesets.length !== TILESETS.length) {
-      console.warn(`[MapScene] Ada tileset yang gagal dipasang di '${cfg.key}' — cek nama tileset di Tiled & key texture di BootScene.`);
+      console.warn(`[MapScene] Ada tileset yg gagal dipasang di '${cfg.key}' — cek nama tileset di Tiled & key texture di BootScene.`);
     }
+    this.tilemap = map;
+    WORLD_W = map.widthInPixels;
+    WORLD_H = map.heightInPixels;
+
     map.createLayer(LAYER_GROUND, tilesets)?.setDepth(0);
     this.infraLayer = map.createLayer(LAYER_INFRA, tilesets)?.setDepth(1) ?? null;
     map.createLayer(LAYER_EXTRA, tilesets)?.setDepth(6);
-    this.tilemap = map;
-    return map;
+
+    this.readMapObjects(map);
+    this.buildWalkGrid(map);   // setelah SPAWN final (readMapObjects) & infraLayer siap
   }
 
-  /** Letakkan semua yang bergantung chapter: kamera, pemain, rumah, Bos, warga, pemilik rumah. */
-  private applyChapter(map: Phaser.Tilemaps.Tilemap): void {
-    const cfg = this.state.chapter.map;
-    this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
-    this.player.setPosition(cfg.spawn.x, cfg.spawn.y);
-    this.facing = 'down';
-    this.cartPlaced = false;   // chapter baru: gerobak kembali didorong
-    this.cameras.main.centerOn(cfg.spawn.x, cfg.spawn.y);
-    this.houseOverlay.setPosition(cfg.house.x, cfg.house.y).setSize(cfg.house.w, cfg.house.h).setVisible(false);
-    this.placeBoss();
-    this.boss.alert.setVisible(false);
-
-    this.dialogueNpc = null;
-    this.npcs.forEach(n => { n.sprite.destroy(); n.label?.destroy(); n.bubble?.destroy(); });
-    this.spawnNpcs();
-
-    if (this.owner) { this.owner.sprite.destroy(); this.owner.label?.destroy(); this.owner.bubble?.destroy(); }
-    this.owner = { ...this.makePerson('E', this.state.chapter.suspectName, cfg.door.x, cfg.door.y, 1.4, true, []), visible: false };
-    this.refreshOwnerTarget();
-    this.nearHouseNow = false;
+  /** Pindahkan rumah-overlay, Bos, dan kamera ke peta yang baru dimuat. */
+  private applyMapToScene(): void {
+    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+    this.fitViewToContainer();
+    this.houseOverlay.setPosition(HOUSE.x, HOUSE.y).setSize(HOUSE.w, HOUSE.h);
+    const b = this.boss;
+    b.sprite.setPosition(BOSS.x, BOSS.y);
+    b.phone.setPosition(BOSS.x + 11, BOSS.y - CHAR_HEIGHT_MAP * 0.6);
+    b.label.setPosition(BOSS.x, BOSS.y + 10);
+    b.alert.setPosition(BOSS.x, BOSS.y - CHAR_HEIGHT_MAP - 8);
   }
 
-  /** Muat chapter berikutnya: reset state lalu bangun ulang peta & isinya (Scene yang sama dipakai ulang). */
-  private loadNextChapterIntoScene(): void {
-    this.state.loadChapter(this.state.chapterIndex + 1);
-    const map = this.buildMap();
-    this.buildWalkGrid(map);
-    this.applyChapter(map);
-    Hud.updateClock(this.state);
-    Hud.renderLog(this.state);
-    Hud.updateSuspicion(this.state);
-  }
-
-  update(_time: number, delta: number): void {
-    this.movePlayer(delta);
-    const cp = this.cartPosition();
-    this.cart.setFlipX(this.cartPlaced ? this.cartFlip : this.facing === 'left').setPosition(Math.round(cp.x), Math.round(cp.y));
-    this.npcs.forEach(n => this.updateNpcBehavior(n));
-    this.stepOwner();
-    this.checkHouse();
-    this.updateSuspicion();
-    const busy = !!this.dialogueNpc || this.storyActive || this.overlayOpen;
-    Hud.talkBtn.disabled = !this.nearestNpc() || busy;
-    Hud.enterBtn.disabled = !this.nearDoor() || this.state.caseSolved || busy;
-    const nearCart = dist(this.player.x, this.player.y, this.cartSpot.x, this.cartSpot.y) <= CART_PICKUP_RADIUS;
-    const cartLabel = this.cartPlaced ? '🛒 Ambil Gerobak (F)' : '🛒 Taruh Gerobak (F)';
-    if (Hud.cartBtn.textContent !== cartLabel) Hud.cartBtn.textContent = cartLabel;
-    Hud.cartBtn.disabled = busy || (this.cartPlaced && !nearCart);
-    // Petunjuk sekali-sekali saat pemain di depan pintu tapi belum memenuhi syarat gerobak.
-    if (this.nearDoor() && !this.state.caseSolved && this.cartRuleMessage() && this.time.now - this.lastDoorHintAt > 6000) {
-      this.lastDoorHintAt = this.time.now;
-      Hud.setToast(this.cartRuleMessage()!, '#f5a623');
+  /** Baca layer objek 'Objek' (kalau ada) utk menimpa posisi default spawn/boss/rumah/pintu.
+   *  Di Tiled: Layer > New > Object Layer, namai 'Objek', lalu gambar objek & isi kolom Name:
+   *    spawn, boss, door (Insert Point), house (Insert Rectangle),
+   *    npc_<nama_npc> (Insert Point, mis. npc_bu_sari = posisi awal NPC 'Bu Sari'). */
+  private readMapObjects(map: Phaser.Tilemaps.Tilemap): void {
+    const layer = map.getObjectLayer(OBJECT_LAYER);
+    if (!layer) {
+      return; // normal: titik penting sudah diambil dari Chapters.ts
     }
-    Hud.reportBtn.disabled = !(this.nearBoss() && this.state.caseSolved && !this.state.missionReported) || busy;
-    this.houseOverlay.setVisible(this.state.caseSolved);
-    this.boss.label.setText(this.state.missionReported ? 'Kasus Selesai ✅' : 'Bos (Telepon)');
-    this.boss.alert.setVisible(this.state.caseSolved && !this.state.missionReported);
-  }
-
-  // ---------- input ----------
-  private bindInput(): void {
-    const kb = this.input.keyboard!;
-    this.cursors = kb.createCursorKeys();
-    this.wasd = kb.addKeys('W,A,S,D') as Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
-    // E lewat window (bukan Phaser): Scene yang di-pause tak menerima event, jadi E yang menutup interior tidak ikut "bocor" ke peta.
-    const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (e.repeat) return;
-      if (k === 'e') this.handleInteract();
-      if (k === 'f') this.toggleCart();
-    };
-    window.addEventListener('keydown', onKey);
-    this.events.once('shutdown', () => window.removeEventListener('keydown', onKey));
-
-    // Tombol arah layar sentuh (di index.html)
-    const bindings: Array<[string, Direction]> = [
-      ['btnUp', 'up'], ['btnDown', 'down'], ['btnLeft', 'left'], ['btnRight', 'right']
-    ];
-    for (const [id, dir] of bindings) {
-      const el = document.getElementById(id)!;
-      const on = (e: Event) => { e.preventDefault(); this.pad[dir] = true; };
-      const off = () => { this.pad[dir] = false; };
-      el.addEventListener('pointerdown', on);
-      el.addEventListener('pointerup', off);
-      el.addEventListener('pointerleave', off);
-      el.addEventListener('pointercancel', off);
+    let hasDoor = false, hasHouse = false;
+    this.npcSpots = {};
+    for (const o of layer.objects) {
+      const ox = o.x ?? 0, oy = o.y ?? 0;
+      const nm = (o.name || '').toLowerCase();
+      if (nm.startsWith('npc_')) { this.npcSpots[nm] = { x: ox, y: oy }; continue; }
+      switch (nm) {
+        case 'spawn': SPAWN.x = ox; SPAWN.y = oy; break;
+        case 'boss': BOSS.x = ox; BOSS.y = oy; break;
+        case 'door': DOOR_SPOT.x = ox; DOOR_SPOT.y = oy; hasDoor = true; break;
+        case 'house': Object.assign(HOUSE, { x: ox, y: oy, w: o.width ?? HOUSE.w, h: o.height ?? HOUSE.h }); hasHouse = true; break;
+      }
     }
+    // Kalau rumah ditandai tapi pintunya tidak, taruh titik pintu tepat di bawah tengah rumah.
+    if (hasHouse && !hasDoor) { DOOR_SPOT.x = HOUSE.x + HOUSE.w / 2; DOOR_SPOT.y = HOUSE.y + HOUSE.h + 12; }
   }
 
-  // ---------- gerak & tabrakan ----------
+  /** Apakah titik dunia (px) berada di tile bangunan/pohon (layer Infrastruktur)? */
   private isSolid(x: number, y: number): boolean {
-    return !!this.infraLayer && this.infraLayer.hasTileAtWorldXY(x, y);
+    if (!this.infraLayer) return false;
+    return this.infraLayer.hasTileAtWorldXY(x, y);
   }
-  /** Kaki pemain dianggap selebar 10px (5px kiri-kanan dari titik tengah). */
+
+  /** Cek kaki karakter (2 titik kiri-kanan) menabrak tembok atau tidak. */
   private footBlocked(x: number, y: number): boolean {
     return this.isSolid(x - 5, y) || this.isSolid(x + 5, y);
   }
 
-  private movePlayer(delta: number): void {
-    if (this.dialogueNpc || this.storyActive) return;   // gerakan dikunci selama dialog
-    const left = this.cursors.left.isDown || this.wasd.A.isDown || this.pad.left;
-    const right = this.cursors.right.isDown || this.wasd.D.isDown || this.pad.right;
-    const up = this.cursors.up.isDown || this.wasd.W.isDown || this.pad.up;
-    const down = this.cursors.down.isDown || this.wasd.S.isDown || this.pad.down;
-    const dx = (right ? 1 : 0) - (left ? 1 : 0);
-    const dy = (down ? 1 : 0) - (up ? 1 : 0);
-    if (dx === 0 && dy === 0) {
-      this.walkFrame = 0;
-      this.applyFrame();
-      return;
-    }
-
-    // Normalisasi supaya gerak diagonal tidak lebih cepat.
-    const len = Math.hypot(dx, dy);
-    const step = (PLAYER_SPEED * delta) / 1000;
-    const world = this.cameras.main.getBounds();
-    // Sumbu X dan Y dicek terpisah agar pemain bisa "menyusur" tembok.
-    const nx = Phaser.Math.Clamp(this.player.x + (dx / len) * step, world.x + 8, world.right - 8);
-    if (!this.footBlocked(nx, this.player.y)) this.player.x = nx;
-    const ny = Phaser.Math.Clamp(this.player.y + (dy / len) * step, world.y + 16, world.bottom);
-    if (!this.footBlocked(this.player.x, ny)) this.player.y = ny;
-
-    this.facing = dx !== 0 ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
-    if (this.time.now >= this.nextStepAt) {
-      this.walkFrame = this.walkFrame === 0 ? 1 : 0;
-      this.nextStepAt = this.time.now + 150;
-    }
-    this.applyFrame();
+  private buildHouse(): void {
+    // Bangunan rumah sudah ada di tilemap. Di sini cuma lapisan hijau penanda "kasus terungkap"
+    // (muncul saat caseSolved). Rumah TIDAK diberi label apa pun supaya tidak membocorkan
+    // rumah mana yg jadi target — semua bangunan di peta terlihat sama.
+    this.houseOverlay = this.add.rectangle(HOUSE.x, HOUSE.y, HOUSE.w, HOUSE.h, 0x5affa0, 0.28)
+      .setOrigin(0, 0).setDepth(2).setVisible(false);
   }
 
-  private applyFrame(): void {
-    const { frame, flipX } = charFrame('A', this.facing, this.walkFrame);
-    this.player.setFrame(frame).setFlipX(flipX);
-  }
-
-  // ---------- pengamatan rumah ----------
-  private nearHouse(): boolean {
-    const h = this.state.chapter.map.house;
-    // Jarak ke TEPI persegi rumah (bukan ke pusat), karena ukuran rumah di peta bebas.
-    const cx = Phaser.Math.Clamp(this.player.x, h.x, h.x + h.w);
-    const cy = Phaser.Math.Clamp(this.player.y, h.y, h.y + h.h);
-    return dist(this.player.x, this.player.y, cx, cy) < NEAR_HOUSE_RADIUS;
-  }
-
-  private checkHouse(): void {
-    const near = this.nearHouse();
-    if (!near) { this.nearHouseNow = false; return; }
-    if (this.nearHouseNow) return;           // hanya reaksi saat baru mendekat
-    this.nearHouseNow = true;
-
-    if (this.state.recordObservationIfNew()) {
-      Hud.renderLog(this.state);
-      const ada = this.state.currentStatus === 'ada';
-      Hud.setToast(
-        ada ? `👤 ${this.state.currentSlot}: ada orang di rumah ${this.state.chapter.suspectName}.`
-            : `✅ ${this.state.currentSlot}: rumah ${this.state.chapter.suspectName} tampak kosong!`,
-        ada ? '#ff6b6b' : '#00d9a3'
-      );
-    } else {
-      Hud.setToast(`📋 Slot ${this.state.currentSlot} sudah dicatat. Tunggu pergantian waktu.`, '#f5a623');
-    }
-  }
-
-  // ---------- warga ----------
-  /** Bangun NPC penting dari data chapter + beberapa warga acak (ambient) sebagai figuran. */
-  private spawnNpcs(): void {
-    const now = this.time.now;
-    const chapter = this.state.chapter;
-    const sp = chapter.map.spawn;
-    const list: Person[] = chapter.npcs.map(cfg =>
-      this.makePerson(cfg.charKey, cfg.name, cfg.x, cfg.y, cfg.speed, true, cfg.conversation));
-
-    const taken = new Set(chapter.npcs.map(c => c.name));
-    const pool = Phaser.Utils.Array.Shuffle(AMBIENT_NPCS.filter(a => !taken.has(a.name)).slice());
-    const count = Math.min(pool.length, chapter.ambientCount ?? AMBIENT_COUNT);
-    for (let i = 0; i < count; i++) {
-      const t = pool[i];
-      let pt = this.randomPointInWorld(), tries = 0;
-      while (dist(pt.x, pt.y, sp.x, sp.y) < 90 && tries++ < 15) pt = this.randomPointInWorld();
-      list.push(this.makePerson(t.charKey, t.name, pt.x, pt.y, Phaser.Math.FloatBetween(0.8, 1.2), true, t.conversation));
-    }
-
-    list.forEach(p => {
-      this.nudgeToWalkable(p);
-      p.nextDecisionAt = now + Phaser.Math.Between(3000, 12000);
-      this.applyPersonVisual(p);
-    });
-    this.npcs = list;
+  private buildBoss(): void {
+    const { frame } = charFrame('F', 'down', 0);
+    const sprite = this.add.sprite(BOSS.x, BOSS.y, 'sheet', frame).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
+    const phone = this.add.text(BOSS.x + 11, BOSS.y - CHAR_HEIGHT_MAP * 0.6, '📞', { fontSize: '13px' }).setOrigin(0.5).setDepth(3);
+    const label = this.add.text(BOSS.x, BOSS.y + 10, 'Bos (Telepon)', { fontSize: '9px', color: '#eef2f7', fontFamily: 'monospace' }).setOrigin(0.5, 0).setDepth(3);
+    const alert = this.add.text(BOSS.x, BOSS.y - CHAR_HEIGHT_MAP - 8, '❗ Ada laporan', { fontSize: '9px', color: '#f5a623', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(3).setVisible(false);
+    this.boss = { sprite, phone, label, alert };
   }
 
   private makePerson(charKey: string, name: string, x: number, y: number, speed: number, withLabel: boolean, dialogues: NpcLine[]): Person {
@@ -396,214 +401,30 @@ export class MapScene extends Phaser.Scene {
     };
   }
 
-  private nearestNpc(): Person | null {
-    let best: Person | null = null, bestD = TALK_RADIUS;
-    for (const n of this.npcs) {
-      const d = dist(this.player.x, this.player.y, n.x, n.y);
-      if (d < bestD) { bestD = d; best = n; }
-    }
-    return best;
-  }
-
-  // ---------- dialog ----------
-  /** Tombol E / tombol "Ajak Bicara": mulai obrolan, atau lanjut ke baris berikutnya kalau dialog sudah terbuka. */
-  private handleInteract(): void {
-    if (this.overlayOpen) return;
-    if (this.storyActive) { this.advanceStory(); return; }
-    if (this.dialogueNpc) { this.advanceDialogue(); return; }
-    const npc = this.nearestNpc();
-    if (!npc) {
-      if (this.nearDoor() && !this.state.caseSolved) this.tryEnter();
-      else if (this.nearBoss()) this.laporBos();
-      return;
-    }
-    if (npc.dialogues.length === 0) return;
-    this.dialogueNpc = npc;
-    npc.dialogueIndex = 0;   // tiap ngobrol diputar dari awal
-    const face = dirFromDelta(this.player.x - npc.x, this.player.y - npc.y);   // NPC menghadap pemain
-    if (face) npc.dir = face;
-    this.showLine(npc);
-  }
-
-  private showLine(npc: Person): void {
-    const line = npc.dialogues[npc.dialogueIndex];
-    Hud.showDialogue(line.who === 'Aku' ? '🧑 Aku' : npc.name, line.text);
-  }
-
-  private advanceDialogue(): void {
-    const npc = this.dialogueNpc;
-    if (!npc) return;
-    if (npc.dialogueIndex < npc.dialogues.length - 1) {
-      npc.dialogueIndex++;
-      this.showLine(npc);
-      return;
-    }
-    this.dialogueNpc = null;   // obrolan habis -> tutup
-    Hud.hideDialogue();
-  }
-
-  /** Ketuk kotak dialog: lanjutkan cerita atau obrolan, mana yang sedang aktif. */
-  private advance(): void {
-    if (this.storyActive) this.advanceStory();
-    else this.advanceDialogue();
-  }
-
-  // ---------- dialog cerita Bos <-> Aku ----------
-  /** Putar obrolan cerita baris demi baris. Jam desa dihentikan selama cerita berjalan. */
-  private playStory(lines: DialogueLine[], ctaLabel: string, onDone: () => void): void {
-    this.storyLines = lines;
-    this.storyIndex = 0;
-    this.storyCta = ctaLabel;
-    this.storyActive = true;
-    this.storyOnDone = onDone;
-    this.time.paused = true;
-    this.showStoryLine();
-  }
-
-  private showStoryLine(): void {
-    const isLast = this.storyIndex === this.storyLines.length - 1;
-    Hud.showStoryLine(this.storyLines[this.storyIndex], isLast, this.storyCta);
-  }
-
-  private advanceStory(): void {
-    if (!this.storyActive) return;
-    if (this.storyIndex < this.storyLines.length - 1) {
-      this.storyIndex++;
-      this.showStoryLine();
-      return;
-    }
-    this.storyActive = false;
-    this.time.paused = false;
-    Hud.hideStoryLine();
-    const done = this.storyOnDone;
-    this.storyOnDone = null;
-    done?.();
-  }
-
-  /** Briefing awal chapter: telepon Bos, lalu tombol "Mulai Misi" menampilkan tujuan. */
-  private showBriefing(): void {
-    this.playStory(this.state.chapter.briefingLog, '▶ Mulai Misi', () => {
-      this.state.nextTimeChange = Date.now() + TIME_INTERVAL_MS;   // jam mulai dari awal setelah briefing
-      Hud.setToast(`🎯 ${this.state.chapter.objective}  🛒 Tekan F untuk menaruh/mengambil gerobak; taruh dulu sebelum masuk rumah.`, '#00d9a3');
-    });
-  }
-
-  // ---------- kecurigaan warga ----------
-  /** Dekat rumah target = makin dicurigai; menjauh = pelan-pelan mereda. Penuh = diusir kembali ke titik awal. */
-  private updateSuspicion(): void {
-    if (this.nearHouse()) this.state.suspicion = Math.min(100, this.state.suspicion + 0.35);
-    else this.state.suspicion = Math.max(0, this.state.suspicion - 0.15);
-    Hud.updateSuspicion(this.state);
-    if (this.state.suspicion >= 100) {
-      Hud.setToast('🚨 Kamu terlalu lama nongkrong, warga curiga! Menjauh dulu...', '#ff6b6b');
-      this.state.suspicion = 0;
-      const sp = this.state.chapter.map.spawn;
-      this.player.x = sp.x; this.player.y = sp.y;
-    }
-  }
-
-  // ---------- masuk rumah ----------
-  private nearDoor(): boolean {
-    const d = this.state.chapter.map.door;
-    return dist(this.player.x, this.player.y, d.x, d.y) < DOOR_RADIUS;
-  }
-
-  /** "Coba Masuk": rumah kosong = menyelinap masuk (pindah ke InteriorScene); ada orang = ketahuan dan terusir. */
-  private tryEnter(): void {
-    if (!this.nearDoor() || this.dialogueNpc || this.storyActive || this.overlayOpen) return;
-    const blocked = this.cartRuleMessage();
-    if (blocked) { Hud.setToast(blocked, '#f5a623'); return; }
-    this.state.setObservation();
-    Hud.renderLog(this.state);
-    if (this.state.currentStatus === 'kosong') {
-      Hud.setToast('✅ Rumah kosong, kamu berhasil menyelinap masuk!', '#00d9a3');
-      this.scene.pause();
-      this.scene.launch('Interior');
-    } else {
-      Hud.setToast('❌ KETAHUAN! Pemilik rumah memergokimu di depan pintu. Kabur!', '#ff6b6b');
-      this.state.suspicion = 0;
-      const sp = this.state.chapter.map.spawn;
-      this.player.x = sp.x; this.player.y = sp.y;
-    }
-  }
-
-  // ---------- Bos & laporan ----------
-  private buildBoss(): void {
-    const { frame } = charFrame('F', 'down', 0);
-    this.bossSprite = this.add.sprite(0, 0, 'sheet', frame).setOrigin(0.5, 1).setScale(CHAR_SCALE_MAP).setDepth(3);
-    this.bossPhone = this.add.text(0, 0, '📞', { fontSize: '13px' }).setOrigin(0.5).setDepth(3);
-    const label = this.add.text(0, 0, 'Bos (Telepon)', { fontSize: '9px', color: '#eef2f7', fontFamily: 'monospace' }).setOrigin(0.5, 0).setDepth(3);
-    const alert = this.add.text(0, 0, '❗ Ada laporan', { fontSize: '9px', color: '#f5a623', fontFamily: 'monospace' })
-      .setOrigin(0.5).setDepth(3).setVisible(false);
-    this.boss = { label, alert };
-  }
-
-  /** Pindahkan Bos (sprite, 📞, label) ke posisi Bos chapter aktif. */
-  private placeBoss(): void {
-    const b = this.state.chapter.map.boss;
-    this.bossSprite.setPosition(b.x, b.y);
-    this.bossPhone.setPosition(b.x + 11, b.y - CHAR_HEIGHT_MAP * 0.6);
-    this.boss.label.setPosition(b.x, b.y + 10);
-    this.boss.alert.setPosition(b.x, b.y - CHAR_HEIGHT_MAP - 8);
-  }
-
-  private nearBoss(): boolean {
-    const b = this.state.chapter.map.boss;
-    return dist(this.player.x, this.player.y, b.x, b.y) < BOSS_RADIUS;
-  }
-
-  /** Lapor ke Bos: dialog penutup, lalu pindah ke chapter berikutnya — atau layar Mission Complete kalau ini chapter terakhir. */
-  private laporBos(): void {
-    if (this.overlayOpen || this.storyActive || this.dialogueNpc) return;
-    if (!this.nearBoss() || !this.state.caseSolved || this.state.missionReported) return;
-    this.state.missionReported = true;
-    Hud.setToast('📞 Menghubungi Bos...', '#00d9a3');
-    const chapter = this.state.chapter;
-    const hasNext = this.state.hasNextChapter;
-    const ctaLabel = hasNext ? 'Lanjut ke Chapter Berikutnya ▶' : '✅ Complete';
-    this.playStory(chapter.debriefingLog, ctaLabel, () => {
-      this.overlayOpen = true;
-      if (hasNext) {
-        const next = CHAPTERS[this.state.chapterIndex + 1];
-        showChapterTransition(
-          { chapterId: next.id, title: next.title },
-          () => this.loadNextChapterIntoScene(),          // peta diganti saat layar tertutup
-          () => { this.overlayOpen = false; this.showBriefing(); }
-        );
-      } else {
-        showMissionComplete({ chapterId: chapter.id, chapterTitle: chapter.title }, () => {
-          // Tamat. Menu utama baru ada di versi berikutnya, jadi untuk sementara muat ulang halaman = main lagi dari awal.
-          window.location.reload();
-        });
-      }
-    });
-  }
-
-  /** Posisi gerobak bakso pemain saat ini (gerobak menempel & ikut bergerak bersama pemain). */
+  /** Posisi gerobak bakso pemain saat ini (gerobak menempel & ikut bergerak bersama avatar). */
   private cartPosition(): { x: number; y: number } {
     if (this.cartPlaced) return this.cartSpot;
-    const side = this.facing === 'left' ? -1 : 1;
-    return { x: this.player.x + side * CART_OFFSET_X, y: this.player.y + 2 };
+    const side = this.avatar.dir === 'left' ? -1 : 1;
+    return { x: this.avatar.x + side * CART_OFFSET_X, y: this.avatar.y + 2 };
   }
 
-  /** Titik gerobak kalau ditaruh di sisi `side` (-1 kiri / +1 kanan) pemain. */
+  /** Titik gerobak kalau ditaruh di sisi `side` (-1 kiri / +1 kanan) avatar. */
   private cartSpotAt(side: number): Pt {
-    return { x: this.player.x + side * CART_OFFSET_X, y: this.player.y + 2 };
+    return { x: this.avatar.x + side * CART_OFFSET_X, y: this.avatar.y + 2 };
   }
 
   /** Tempat gerobak muat? (tidak menimpa tembok/pohon & tidak di dalam persegi rumah target) */
   private cartSpotFree(p: Pt): boolean {
     const half = 14;   // setengah lebar kaki gerobak (px dunia)
     if (this.footBlocked(p.x - half, p.y) || this.footBlocked(p.x, p.y) || this.footBlocked(p.x + half, p.y)) return false;
-    const H = this.state.chapter.map.house;
-    return !(p.x > H.x && p.x < H.x + H.w && p.y > H.y && p.y < H.y + H.h);
+    return !(p.x > HOUSE.x && p.x < HOUSE.x + HOUSE.w && p.y > HOUSE.y && p.y < HOUSE.y + HOUSE.h);
   }
 
-  /** Tombol F: taruh gerobak di samping pemain, atau ambil lagi kalau sudah ditaruh & pemain dekat. */
+  /** Tombol F: taruh gerobak di samping avatar, atau ambil lagi kalau sudah ditaruh & avatar dekat. */
   private toggleCart(): void {
-    if (this.overlayOpen || this.storyActive || this.dialogueNpc || !this.scene.isActive()) return;
+    if (this.overlayOpen || this.storyActive || this.dialogueOpen || !this.scene.isActive()) return;
     if (this.cartPlaced) {
-      if (dist(this.player.x, this.player.y, this.cartSpot.x, this.cartSpot.y) > CART_PICKUP_RADIUS) {
+      if (dist(this.avatar.x, this.avatar.y, this.cartSpot.x, this.cartSpot.y) > CART_PICKUP_RADIUS) {
         Hud.setToast('🛒 Terlalu jauh dari gerobak. Dekati gerobakmu dulu, baru tekan F.', '#f5a623');
         return;
       }
@@ -611,7 +432,7 @@ export class MapScene extends Phaser.Scene {
       Hud.setToast('🛒 Gerobak diambil lagi.', '#00d9a3');
       return;
     }
-    const pref = this.facing === 'left' ? -1 : 1;
+    const pref = this.avatar.dir === 'left' ? -1 : 1;
     const spot = [this.cartSpotAt(pref), this.cartSpotAt(-pref)].find(p => this.cartSpotFree(p));
     if (!spot) {
       Hud.setToast('🛒 Tidak ada ruang untuk menaruh gerobak di sini. Pindah ke tempat yang lebih lapang.', '#ff6b6b');
@@ -619,14 +440,14 @@ export class MapScene extends Phaser.Scene {
     }
     this.cartPlaced = true;
     this.cartSpot = { x: spot.x, y: spot.y };
-    this.cartFlip = spot.x < this.player.x;
+    this.cartFlip = spot.x < this.avatar.x;
     Hud.setToast('🛒 Gerobak ditaruh. Tekan F di dekatnya untuk mengambil lagi.', '#00d9a3');
   }
 
-  /** Boleh masuk rumah target? Gerobak harus sudah ditaruh dan ditinggalkan (pemain menjauh >= CART_LEAVE_DIST). */
+  /** Boleh masuk rumah target? Gerobak harus sudah ditaruh dan ditinggalkan (avatar menjauh >= CART_LEAVE_DIST). */
   private cartRuleMessage(): string | null {
     if (!this.cartPlaced) return '🛒 Kamu masih mendorong gerobak bakso! Taruh dulu gerobaknya (tekan F) sebelum masuk rumah.';
-    if (dist(this.player.x, this.player.y, this.cartSpot.x, this.cartSpot.y) < CART_LEAVE_DIST) {
+    if (dist(this.avatar.x, this.avatar.y, this.cartSpot.x, this.cartSpot.y) < CART_LEAVE_DIST) {
       return '🚶 Gerobakmu masih terlalu dekat. Tinggalkan gerobak (jauhi sedikit) baru masuk rumah.';
     }
     return null;
@@ -638,10 +459,31 @@ export class MapScene extends Phaser.Scene {
     return { x: c.x, y: c.y + 10 };
   }
 
-  private jualBakso(npc: Person): void {
-    const target = npc;
-    this.state.suspicion = 0;
-    Hud.setToast('🍜 ' + (target ? target.name : 'Warga') + ' beli bakso — kecurigaan mereda, penyamaranmu makin kuat!', '#00d9a3');
+  /** Bangun NPC sipil dari NpcConfig chapter aktif (penting utk cerita) + beberapa warga acak (ambient) sbg figuran. */
+  private spawnNpcsFromChapter(): void {
+    const now = this.time.now;
+    const chapter = this.state.chapter;
+    const list: Person[] = chapter.npcs.map((cfg: NpcConfig) => {
+      const spot = this.npcSpots['npc_' + cfg.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')];
+      return this.makePerson(cfg.charKey, cfg.name, spot?.x ?? cfg.x, spot?.y ?? cfg.y, cfg.speed, true, cfg.conversation);
+    });
+
+    const taken = new Set(chapter.npcs.map(c => c.name));
+    const pool = Phaser.Utils.Array.Shuffle(AMBIENT_NPCS.filter(a => !taken.has(a.name)).slice());
+    const count = Math.min(pool.length, chapter.ambientCount ?? AMBIENT_COUNT);
+    for (let i = 0; i < count; i++) {
+      const t = pool[i];
+      let pt = this.randomPointInWorld(), tries = 0;
+      while (dist(pt.x, pt.y, SPAWN.x, SPAWN.y) < 90 && tries++ < 15) pt = this.randomPointInWorld();
+      list.push(this.makePerson(t.charKey, t.name, pt.x, pt.y, Phaser.Math.FloatBetween(0.8, 1.2), true, t.conversation));
+    }
+
+    list.forEach(p => {
+      this.nudgeToWalkable(p);
+      p.nextDecisionAt = now + Phaser.Math.Between(3000, 12000);
+      this.applyPersonVisual(p);
+    });
+    this.npcs = list;
   }
 
   // ---------- grid jalan & pathfinding ----------
@@ -661,7 +503,7 @@ export class MapScene extends Phaser.Scene {
     }
     // flood fill dari spawn (aturan gerak sama dgn A*: diagonal tak boleh memotong sudut tembok)
     this.reachCells = [];
-    const start = this.nearestWalkableCell(this.state.chapter.map.spawn.x, this.state.chapter.map.spawn.y, 10);
+    const start = this.nearestWalkableCell(SPAWN.x, SPAWN.y, 10);
     if (start < 0) return;
     const seen = new Uint8Array(this.walkGrid.length);
     const queue = [start];
@@ -820,7 +662,7 @@ export class MapScene extends Phaser.Scene {
   /** Titik acak yang bisa dijangkau dari spawn, tidak menimpa tembok & tidak terlalu dekat rumah target. */
   private randomPointInWorld(): Pt {
     const T = this.tileSize;
-    if (this.reachCells.length === 0) return { x: this.gridW * this.tileSize / 2, y: this.gridH * this.tileSize / 2 };
+    if (this.reachCells.length === 0) return { x: WORLD_W / 2, y: WORLD_H / 2 };
     let x = 0, y = 0, tries = 0;
     do {
       const idx = this.reachCells[Math.floor(Math.random() * this.reachCells.length)];
@@ -841,14 +683,11 @@ export class MapScene extends Phaser.Scene {
   /** Titik tidak boleh dipilih kalau menimpa bangunan/pohon, atau terlalu dekat rumah target. */
   private pointBlocked(x: number, y: number): boolean {
     if (this.footBlocked(x, y)) return true;
-    const H = this.state.chapter.map.house;
-    return x > H.x - 25 && x < H.x + H.w + 25 && y > H.y - 25 && y < H.y + H.h + 25;
+    return x > HOUSE.x - 25 && x < HOUSE.x + HOUSE.w + 25 && y > HOUSE.y - 25 && y < HOUSE.y + HOUSE.h + 25;
   }
-
-  // ---------- pemilik rumah ----------
   private randomFarPointFromHouse(): Pt {
     let p = this.randomPointInWorld(), tries = 0;
-    const hc = { x: this.state.chapter.map.house.x + this.state.chapter.map.house.w / 2, y: this.state.chapter.map.house.y + this.state.chapter.map.house.h / 2 };
+    const hc = { x: HOUSE.x + HOUSE.w / 2, y: HOUSE.y + HOUSE.h / 2 };
     while (dist(p.x, p.y, hc.x, hc.y) < 280 && tries < 15) { p = this.randomPointInWorld(); tries++; }
     return p;
   }
@@ -857,33 +696,338 @@ export class MapScene extends Phaser.Scene {
   private refreshOwnerTarget(): void {
     const o = this.owner;
     if (this.state.currentStatus === 'kosong') {
-      if (!o.visible) { o.x = this.state.chapter.map.door.x; o.y = this.state.chapter.map.door.y; o.visible = true; }
+      if (!o.visible) { o.x = DOOR_SPOT.x; o.y = DOOR_SPOT.y; o.visible = true; }
       o.target = this.randomFarPointFromHouse();
     } else {
       o.visible = true;
-      o.target = { x: this.state.chapter.map.door.x, y: this.state.chapter.map.door.y };
+      o.target = { x: DOOR_SPOT.x, y: DOOR_SPOT.y };
     }
     o.path = []; o.repathAt = 0;
   }
 
-  private stepOwner(): void {
-    const o = this.owner;
-    const now = this.time.now;
-    if (o.path.length === 0) {
-      const d = dist(o.x, o.y, o.target.x, o.target.y);
-      if (d > 8) {
-        if (now >= o.repathAt) { o.repathAt = now + 1000; this.setDestination(o, o.target.x, o.target.y); }
-      } else if (this.state.currentStatus === 'ada') {
-        o.visible = false;
-      } else {
-        o.target = this.randomFarPointFromHouse();
-        o.repathAt = 0;
-      }
+  // ---------- input ----------
+  private bindInput(): void {
+    const map: Record<string, string> = {
+      arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down',
+      arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right'
+    };
+    const kd = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (map[k]) this.keys[map[k]] = true;
+      if (k === 'e') this.handleInteract();
+      if (k === 'f' && !e.repeat) this.toggleCart();
+      if (k === 'k' && DEBUG_DOOR && !e.repeat) this.debugSetDoor();
+    };
+    const ku = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (map[k]) this.keys[map[k]] = false; };
+    window.addEventListener('keydown', kd);
+    window.addEventListener('keyup', ku);
+    this.events.once('shutdown', () => {
+      window.removeEventListener('keydown', kd);
+      window.removeEventListener('keyup', ku);
+      this.countdownTimer?.remove();
+    });
+    const bindHold = (id: string, dir: string) => {
+      const el = document.getElementById(id)!;
+      el.addEventListener('pointerdown', () => this.keys[dir] = true);
+      el.addEventListener('pointerup', () => this.keys[dir] = false);
+      el.addEventListener('pointerleave', () => this.keys[dir] = false);
+    };
+    bindHold('btnUp', 'up'); bindHold('btnDown', 'down'); bindHold('btnLeft', 'left'); bindHold('btnRight', 'right');
+  }
+
+  /** KALIBRASI PINTU (?debug=1): tekan K saat berdiri di depan pintu rumah -> posisi itu jadi DOOR_SPOT (langsung berlaku),
+   *  dicetak ke Console, dan disalin ke clipboard sebagai baris siap-tempel untuk `map.door` di Chapters.ts. */
+  private debugSetDoor(): void {
+    const x = Math.round(this.avatar.x / 4) * 4, y = Math.round(this.avatar.y / 4) * 4;
+    DOOR_SPOT.x = x; DOOR_SPOT.y = y;
+    const ch = this.state.chapter;
+    this.debugDoors[ch.id] = { x, y };
+    const line = `door: { x: ${x}, y: ${y} }`;
+    console.log(`[Debug] Chapter ${ch.id} -> ${line}`);
+    console.table(this.debugDoors);
+    navigator.clipboard?.writeText(line).catch(() => { /* clipboard tidak tersedia: pakai Console */ });
+    Hud.setToast(`📍 Pintu Chapter ${ch.id}: ${line} (disalin ke clipboard)`, '#00d9a3');
+  }
+
+  /** Overlay kalibrasi: kotak rumah (kuning), titik pintu + radius aktif "Coba Masuk" (merah), koordinat kaki avatar. */
+  private drawDebug(): void {
+    const g = this.debugGfx!;
+    g.clear();
+    g.lineStyle(1, 0xffd54a, 1).strokeRect(HOUSE.x, HOUSE.y, HOUSE.w, HOUSE.h);
+    g.lineStyle(1, 0xff4040, 0.9).strokeCircle(DOOR_SPOT.x, DOOR_SPOT.y, 34);
+    g.fillStyle(0xff4040, 1).fillCircle(DOOR_SPOT.x, DOOR_SPOT.y, 2.5);
+    this.debugText!.setText(`kaki ${Math.round(this.avatar.x)},${Math.round(this.avatar.y)} | pintu ${DOOR_SPOT.x},${DOOR_SPOT.y} | K = set pintu`)
+      .setPosition(Math.round(this.avatar.x), Math.round(this.avatar.y) - 34);
+  }
+
+  private handleInteract(): void {
+    if (this.overlayOpen) return;
+    if (this.storyActive) { this.advanceStory(); return; }
+    if (this.dialogueOpen) { this.advanceDialogue(); return; }
+    if (this.nearNPC() && !Hud.baksoBtn.disabled) { const n = this.nearestNPC(); if (n) this.openDialogue(n); }
+    else if (this.nearDoor() && !Hud.enterBtn.disabled) this.tryEnter();
+    else if (this.nearBoss() && !Hud.reportBtn.disabled) this.laporBos();
+  }
+
+  // ---------- queries (radius identik dengan kode asli) ----------
+  private nearHouse(): boolean {
+    // Jarak avatar ke TEPI persegi rumah (bukan ke pusat), krn ukuran rumah di peta Tiled bebas.
+    const cx = Phaser.Math.Clamp(this.avatar.x, HOUSE.x, HOUSE.x + HOUSE.w);
+    const cy = Phaser.Math.Clamp(this.avatar.y, HOUSE.y, HOUSE.y + HOUSE.h);
+    return dist(this.avatar.x, this.avatar.y, cx, cy) < 50;
+  }
+  private nearDoor(): boolean { return dist(this.avatar.x, this.avatar.y, DOOR_SPOT.x, DOOR_SPOT.y) < 34; }
+  private nearestNPC(): Person | null {
+    let best: Person | null = null, bestD = 44;
+    for (const n of this.npcs) { const d = dist(this.avatar.x, this.avatar.y, n.x, n.y); if (d < bestD) { bestD = d; best = n; } }
+    return best;
+  }
+  private nearNPC(): boolean { return !!this.nearestNPC(); }
+  private nearBoss(): boolean { return dist(this.avatar.x, this.avatar.y, BOSS.x, BOSS.y) < 40; }
+
+  // ---------- dialog NPC ----------
+  /** Tekan E / tombol "Ajak Bicara" -> langsung mulai obrolan dengan NPC (tanpa menu pilihan). */
+  private openDialogue(npc: Person): void {
+    if (npc.dialogues.length === 0) return;
+    this.dialogueOpen = true;
+    this.dialogueNpc = npc;
+    npc.dialogueIndex = 0; // tiap ngobrol diputar dari awal
+    const face = dirFromDelta(this.avatar.x - npc.x, this.avatar.y - npc.y); if (face) npc.dir = face; // NPC menghadap pemain
+    this.showNpcLine(npc);
+  }
+
+  private showNpcLine(npc: Person): void {
+    const line = npc.dialogues[npc.dialogueIndex];
+    // Potret: MC selalu di kiri, NPC yang diajak bicara di kanan.
+    Hud.showDialogue(line.who === 'Aku' ? '🧑 Aku' : npc.name, line.text,
+      { npcChar: npc.charKey, speaker: line.who === 'Aku' ? 'me' : 'npc' });
+  }
+
+  /** Dipanggil saat pemain tekan E / ketuk sementara dialog terbuka: lanjut ke baris obrolan berikutnya,
+   *  atau tutup dialog kalau obrolan habis. */
+  private advanceDialogue(): void {
+    const npc = this.dialogueNpc;
+    if (npc && npc.dialogueIndex < npc.dialogues.length - 1) {
+      npc.dialogueIndex++;
+      this.showNpcLine(npc);
+      return;
     }
-    this.followPath(o);
-    this.applyPersonVisual(o);
-    o.sprite.setVisible(o.visible);
-    o.label?.setVisible(o.visible);
+    this.closeDialogue();
+  }
+
+  private closeDialogue(): void {
+    this.dialogueOpen = false;
+    this.dialogueNpc = null;
+    Hud.hideDialogue();
+  }
+
+  // ---------- dialog cerita Bos <-> Aku ----------
+  /** Mulai obrolan cerita satu baris demi satu baris (spt ngobrol dgn NPC), di dalam map yang sama
+   *  (bukan panel terpisah). Dipakai utk briefing awal chapter & laporan ke Bos di akhir chapter. */
+  private playStory(lines: DialogueLine[], ctaLabel: string, onDone: () => void): void {
+    this.storyLines = lines;
+    this.storyIndex = 0;
+    this.storyCta = ctaLabel;
+    this.storyActive = true;
+    this.storyOnDone = onDone;
+    this.showStoryLine();
+  }
+
+  private showStoryLine(): void {
+    const line = this.storyLines[this.storyIndex];
+    const isLast = this.storyIndex === this.storyLines.length - 1;
+    Hud.showStoryLine(line, isLast, this.storyCta);
+  }
+
+  /** Dipanggil saat pemain menekan E / mengetuk kotak dialog / menekan tombol CTA di baris terakhir. */
+  private advanceStory(): void {
+    if (!this.storyActive) return;
+    if (this.storyIndex < this.storyLines.length - 1) {
+      this.storyIndex++;
+      this.showStoryLine();
+      return;
+    }
+    this.storyActive = false;
+    Hud.hideStoryLine();
+    const done = this.storyOnDone;
+    this.storyOnDone = null;
+    done?.();
+  }
+
+  // ---------- actions ----------
+  private jualBakso(npc: Person | null): void {
+    const target = npc || this.nearestNPC();
+    this.state.suspicion = 0;
+    Hud.setToast('🍜 ' + (target ? target.name : 'Warga') + ' beli bakso — kecurigaan mereda, penyamaranmu makin kuat!', '#00d9a3');
+  }
+
+  private tryEnter(): void {
+    const blocked = this.cartRuleMessage();
+    if (blocked) { Hud.setToast(blocked, '#f5a623'); return; }
+    this.state.setObservation();
+    Hud.renderLog(this.state);
+    if (this.state.currentStatus === 'kosong') {
+      Hud.setToast('✅ Rumah kosong, kamu berhasil menyelinap masuk!', '#00d9a3');
+      this.scene.pause();
+      this.scene.launch('Interior');
+    } else {
+      Hud.setToast('❌ KETAHUAN! Pemilik rumah memergokimu di depan pintu. Kabur!', '#ff6b6b');
+      this.state.suspicion = 0;
+      this.avatar.x = SPAWN.x; this.avatar.y = SPAWN.y;
+    }
+  }
+
+  /** Keluar dari Story ke menu utama (progres sudah tersimpan otomatis; menu menawarkan "Lanjutkan Story"). */
+  private returnToMenu(): void {
+    if (this.overlayOpen) return;   // sedang transisi / Mission Complete
+    document.getElementById('fmOverlay')?.classList.remove('show');
+    Hud.hideDialogue(); Hud.hideStoryLine();
+    this.scene.stop('Interior');
+    this.scene.stop('Hacking');
+    this.scene.start('Menu');
+  }
+
+  private laporBos(): void {
+    if (this.overlayOpen) return;
+    this.state.missionReported = true;
+    const chapter = this.state.chapter;
+    const hasNext = this.state.hasNextChapter;
+    Hud.setToast('📞 Menghubungi Bos...', '#00d9a3');
+    this.scene.pause();
+    // Chapter 1..N-1: tombol "Lanjut" -> transisi pindah peta. Chapter terakhir: tombol "Complete" -> layar Mission Complete.
+    const ctaLabel = hasNext ? 'Lanjut ke Chapter Berikutnya ▶' : '✅ Complete';
+    this.playStory(chapter.debriefingLog, ctaLabel, () => {
+      this.overlayOpen = true;
+      if (hasNext) {
+        const next = CHAPTERS[this.state.chapterIndex + 1];
+        showChapterTransition(
+          { chapterId: next.id, title: next.title },
+          () => this.loadNextChapterIntoScene(),          // peta diganti saat layar tertutup
+          () => { this.overlayOpen = false; this.showBriefingThenPause(); }
+        );
+      } else {
+        showMissionComplete({ chapterId: chapter.id, chapterTitle: chapter.title }, () => {
+          // Tamat: kembali ke menu pilih mode. Progres di-reset saat Story dipilih lagi (MenuScene).
+          this.overlayOpen = false;
+          this.state.storyInProgress = false;   // tamat: menu tidak menawarkan "Lanjutkan" lagi
+          this.scene.start('Menu');
+        });
+      }
+    });
+  }
+
+  /** Muat chapter berikutnya: reset state via GameState.loadChapter(), lalu reset seluruh
+   *  visual peta (posisi avatar, NPC baru & dialognya, warna atap, label tersangka, dll)
+   *  tanpa perlu menulis ulang Scene dari nol. */
+  private loadNextChapterIntoScene(): void {
+    this.state.loadChapter(this.state.chapterIndex + 1);
+
+    // Ganti peta ke milik chapter baru (juga menimpa SPAWN/BOSS/HOUSE/DOOR_SPOT).
+    this.buildMap();
+    this.applyMapToScene();
+
+    this.avatar.x = SPAWN.x; this.avatar.y = SPAWN.y; this.avatar.dir = 'down'; this.avatar.walking = false;
+    this.cartPlaced = false;   // chapter baru: gerobak kembali didorong
+
+    this.npcs.forEach(n => { n.sprite.destroy(); n.label?.destroy(); n.bubble?.destroy(); });
+    this.spawnNpcsFromChapter();
+
+    this.owner.name = this.state.chapter.suspectName;
+    this.owner.label?.setText(this.state.chapter.suspectName);
+    this.owner.x = DOOR_SPOT.x; this.owner.y = DOOR_SPOT.y; this.owner.visible = true;
+    this.refreshOwnerTarget();
+
+    this.houseOverlay.setVisible(false);
+    this.boss.alert.setVisible(false);
+    this.boss.label.text = 'Bos (Telepon)';
+
+    Hud.updateClock(this.state);
+    Hud.renderLog(this.state);
+    Hud.updateSuspicion(this.state);
+    Hud.setToast('🛒 Tekan F untuk menaruh / mengambil gerobak. Taruh gerobak dulu sebelum masuk rumah target.', '#f5a623');
+  }
+
+  private showBriefingThenPause(): void {
+    Hud.setChapterHeader(this.state.chapter);
+    // Setelah refresh: briefing yang sudah dibaca tidak diputar ulang.
+    if (this.state.briefingSeen) {
+      Hud.setToast('🎯 ' + this.state.chapter.objective, '#00d9a3');
+      return;
+    }
+    this.scene.pause();
+    this.playStory(this.state.chapter.briefingLog, '▶ Mulai Misi', () => {
+      this.state.briefingSeen = true;
+      this.scene.resume();
+      Hud.setToast('🎯 ' + this.state.chapter.objective, '#00d9a3');
+    });
+  }
+
+  // ---------- loop ----------
+  update(): void {
+    if (DEBUG_DOOR) this.drawDebug();
+    // Saat dialog NPC terbuka, kunci gerakan avatar supaya pemain tidak jalan sambil ngobrol.
+    if (this.dialogueOpen) {
+      this.keys.up = this.keys.down = this.keys.left = this.keys.right = false;
+    }
+
+    const speed = 3;
+    let dx = 0, dy = 0;
+    if (this.keys.up) dy -= speed;
+    if (this.keys.down) dy += speed;
+    if (this.keys.left) dx -= speed;
+    if (this.keys.right) dx += speed;
+    this.avatar.walking = !!(dx || dy);
+    if (this.avatar.walking) {
+      const nd = dirFromDelta(dx, dy); if (nd) this.avatar.dir = nd;
+      // Gerak per sumbu supaya avatar bisa "menyusur" tembok, dan tidak tembus bangunan/pohon.
+      const nx = Phaser.Math.Clamp(this.avatar.x + dx, 12, WORLD_W - 12);
+      const ny = Phaser.Math.Clamp(this.avatar.y + dy, 12, WORLD_H - 12);
+      if (!this.footBlocked(nx, this.avatar.y)) this.avatar.x = nx;
+      if (!this.footBlocked(this.avatar.x, ny)) this.avatar.y = ny;
+      this.avatar.timer++;
+    } else { this.avatar.timer = 0; }
+    this.applyPersonVisual(this.avatar);
+    const cp = this.cartPosition();
+    this.cart.setFlipX(this.cartPlaced ? this.cartFlip : this.avatar.dir === 'left').setPosition(Math.round(cp.x), Math.round(cp.y));
+
+    this.npcs.forEach(n => this.updateNpcBehavior(n));
+    this.stepOwner();
+
+    this.houseOverlay.setVisible(this.state.caseSolved);
+    this.boss.label.text = this.state.missionReported ? 'Kasus Selesai ✅' : 'Bos (Telepon)';
+    this.boss.alert.setVisible(this.state.caseSolved && !this.state.missionReported);
+
+    if (this.nearHouse()) {
+      this.state.suspicion = Math.min(100, this.state.suspicion + 0.35);
+      if (this.state.recordObservationIfNew()) {
+        Hud.renderLog(this.state);
+        const status = this.state.currentStatus;
+        Hud.setToast('👀 Kamu mengamati: rumah sedang ' + (status === 'kosong' ? 'KOSONG' : 'ADA ORANG') + ' (' + this.state.currentSlot + ')', '#f5a623');
+      }
+    } else {
+      this.state.suspicion = Math.max(0, this.state.suspicion - 0.15);
+    }
+    Hud.updateSuspicion(this.state);
+    if (this.state.suspicion >= 100) {
+      Hud.setToast('🚨 Kamu terlalu lama nongkrong, warga curiga! Menjauh dulu...', '#ff6b6b');
+      this.state.suspicion = 0;
+      this.avatar.x = SPAWN.x; this.avatar.y = SPAWN.y;
+    }
+
+    Hud.baksoBtn.disabled = !this.nearNPC() || this.dialogueOpen;
+    Hud.enterBtn.disabled = !(this.nearDoor() && !this.state.caseSolved) || this.dialogueOpen;
+    if (this.cartBtn) {
+      const nearCart = dist(this.avatar.x, this.avatar.y, this.cartSpot.x, this.cartSpot.y) <= CART_PICKUP_RADIUS;
+      const label = this.cartPlaced ? '🛒 Ambil Gerobak (F)' : '🛒 Taruh Gerobak (F)';
+      if (this.cartBtn.textContent !== label) this.cartBtn.textContent = label;
+      this.cartBtn.disabled = this.dialogueOpen || (this.cartPlaced && !nearCart);
+    }
+    // Petunjuk sekali-sekali saat pemain di depan pintu tapi belum memenuhi syarat gerobak.
+    if (this.nearDoor() && !this.state.caseSolved && this.cartRuleMessage() && this.time.now - this.lastDoorHintAt > 6000) {
+      this.lastDoorHintAt = this.time.now;
+      Hud.setToast(this.cartRuleMessage()!, '#f5a623');
+    }
+    Hud.reportBtn.disabled = !(this.nearBoss() && this.state.caseSolved && !this.state.missionReported) || this.dialogueOpen;
   }
 
   // ---------- perilaku NPC ----------
@@ -912,7 +1056,7 @@ export class MapScene extends Phaser.Scene {
   /** Mencoba mengajak NPC lain di dekat sini ngobrol. true kalau berhasil memulai. */
   private startChat(n: Person, now: number): boolean {
     const cands = this.npcs.filter(o => o !== n && (o.behavior === 'wander' || o.behavior === 'idle')
-      && dist(o.x, o.y, n.x, n.y) < 350 && this.dialogueNpc !== o);
+      && dist(o.x, o.y, n.x, n.y) < 350 && !(this.dialogueOpen && this.dialogueNpc === o));
     if (cands.length === 0) return false;
     const p = Phaser.Utils.Array.GetRandom(cands);
     const spots: Pt[] = [{ x: p.x - 20, y: p.y }, { x: p.x + 20, y: p.y }, { x: p.x, y: p.y + 14 }, { x: p.x, y: p.y - 14 }];
@@ -945,7 +1089,7 @@ export class MapScene extends Phaser.Scene {
   /** Atur perilaku satu NPC sipil tiap frame. Semua gerak mengikuti jalur yang menghindari
    *  tembok/bangunan (Infrastruktur), sama seperti avatar. Diam total kalau sedang diajak ngobrol pemain. */
   private updateNpcBehavior(n: Person): void {
-    if (this.dialogueNpc === n) {
+    if (this.dialogueOpen && this.dialogueNpc === n) {
       n.walking = false;
       this.applyPersonVisual(n);
       return;
@@ -1021,6 +1165,26 @@ export class MapScene extends Phaser.Scene {
     this.applyPersonVisual(n);
   }
 
+  private stepOwner(): void {
+    const o = this.owner;
+    const now = this.time.now;
+    if (o.path.length === 0) {
+      const d = dist(o.x, o.y, o.target.x, o.target.y);
+      if (d > 8) {
+        if (now >= o.repathAt) { o.repathAt = now + 1000; this.setDestination(o, o.target.x, o.target.y); }
+      } else if (this.state.currentStatus === 'ada') {
+        o.visible = false;
+      } else {
+        o.target = this.randomFarPointFromHouse();
+        o.repathAt = 0;
+      }
+    }
+    this.followPath(o);
+    this.applyPersonVisual(o);
+    o.sprite.setVisible(o.visible);
+    o.label?.setVisible(o.visible);
+  }
+
   private applyPersonVisual(p: Person): void {
     const frame = p.walking ? (Math.floor(p.timer / 10) % 2) as 0 | 1 : 0;
     const { frame: fi, flipX } = charFrame(p.charKey, p.dir, frame);
@@ -1029,3 +1193,11 @@ export class MapScene extends Phaser.Scene {
     p.bubble?.setPosition(p.x, p.y - CHAR_HEIGHT_MAP - 6);
   }
 }
+
+/* ===================== CATATAN: asset =====================
+ * Peta: public/assets/maps/ch1.json ... ch6.json (hasil export Tiled, format JSON/.tmj).
+ * Tileset (public/assets/tilesets/): city.png, tiny-town.png, buildings-country_town_clean.png, overlay.png.
+ * Key & path di-load di BootScene.ts; titik spawn/boss/rumah/pintu per chapter ada di Chapters.ts (field `map`)
+ * dan bisa ditimpa lewat layer objek 'Objek' di Tiled (termasuk npc_<nama> utk posisi awal NPC).
+ * Warga acak: template di AMBIENT_NPCS (Chapters.ts); jumlah per chapter = ambientCount atau AMBIENT_COUNT.
+ * ========================================================= */
