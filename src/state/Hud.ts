@@ -1,9 +1,15 @@
-import { GameState, SLOT_ICON, SLOTS } from './GameState';
+import { GameState, SLOT_ICON, SLOTS, DEFAULT_PLAYER_NAME } from './GameState';
 import { ChapterConfig, DialogueLine } from './Chapters';
 import { charFrame, CHAR_COLS, CHAR_ROWS, CHAR_W, CHAR_SHEET_URL } from './Sprites';
 
-const STORY_SPEAKER: Record<DialogueLine['speaker'], string> = {
-  Bos: '📞 Bos', Aku: '🧑 Aku', Narasi: '📖 Narasi'
+/** Nama panggilan pemain yang tampil sebagai label pembicara. Diisi MapScene lewat Hud.setPlayerName(). */
+let playerName = DEFAULT_PLAYER_NAME;
+
+/** Label pembicara karakter pemain di kotak dialog (NPC maupun cerita Bos). */
+export const playerSpeakerLabel = (): string => `🧑 ${playerName}`;
+
+const STORY_SPEAKER: Record<Exclude<DialogueLine['speaker'], 'Aku'>, string> = {
+  Bos: '📞 Bos', Narasi: '📖 Narasi'
 };
 
 // ---- Potret karakter di samping dialog: MC SELALU di kiri (menghadap kanan), lawan bicara di kanan (menghadap kiri). ----
@@ -154,7 +160,7 @@ export const Hud = {
    *  besar (mis. "▶ Mulai Misi") lewat ctaLabel. */
   showStoryLine(line: DialogueLine, isLast: boolean, ctaLabel: string): void {
     showPortraits(PORTRAIT_KEY_BOSS, line.speaker === 'Aku' ? 'me' : line.speaker === 'Bos' ? 'other' : null);
-    this.dialogName.textContent = STORY_SPEAKER[line.speaker];
+    this.dialogName.textContent = line.speaker === 'Aku' ? playerSpeakerLabel() : STORY_SPEAKER[line.speaker];
     this.dialogText.textContent = line.text;
     if (isLast) {
       this.dialogHint.style.display = 'none';
@@ -169,6 +175,11 @@ export const Hud = {
   hideStoryLine(): void {
     this.dialogBox.classList.remove('show');
     this.dialogCtaBtn.style.display = 'none';
+  },
+
+  /** Set nama panggilan pemain untuk label dialog (dipanggil MapScene.create). */
+  setPlayerName(name: string): void {
+    playerName = name || DEFAULT_PLAYER_NAME;
   },
 
   /** Update judul chapter di header atas (dipakai saat chapter baru dimuat). */

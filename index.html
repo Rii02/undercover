@@ -101,6 +101,17 @@
   .modeBtn small{display:block; opacity:.8; font-size:clamp(.95rem,.9vw + .9vh,1.25rem); line-height:1.5}
   .modeBtn:hover,.modeBtn:focus-visible{border-color:var(--accent); outline:none; transform:translateY(-2px)}
   #modeStoryBtn{border-color:var(--accent)}
+  /* ---- Langkah isi nama panggilan (muncul setelah klik Story) ---- */
+  #nameStep{display:none; text-align:center}
+  #modeCard.naming #nameStep{display:block}
+  #modeCard.naming #modeChoices{display:none}
+  #nameStep label{display:block; margin:0 0 12px; font-size:clamp(1rem,1vw + 1vh,1.35rem); opacity:.85}
+  #nameInput{width:100%; max-width:420px; padding:14px 16px; border-radius:12px; border:3px solid var(--accent); background:var(--bg); color:var(--text); font-weight:700; font-size:clamp(1.1rem,1.2vw + 1vh,1.5rem); font-family:inherit; text-align:center}
+  #nameInput:focus-visible{outline:3px solid var(--good); outline-offset:2px}
+  #nameHint{min-height:1.4em; margin:8px 0 0; font-size:.9rem; color:var(--bad)}
+  #nameRow{display:flex; gap:10px; justify-content:center; margin-top:clamp(14px,2.4vh,24px)}
+  #nameRow button{flex:1; max-width:210px; border:none; border-radius:12px; padding:14px 10px; font-weight:700; font-size:clamp(.95rem,1vw + 1vh,1.25rem); cursor:pointer; font-family:inherit; background:var(--off); color:var(--text)}
+  #nameRow button#nameOkBtn{background:var(--good); color:#08251c}
 
   /* ==== File manager bukti (tampilan file manager biasa, terang) ==== */
   #fmOverlay{display:none; position:fixed; inset:0; z-index:900; background:rgba(15,18,28,.6); align-items:center; justify-content:center; padding:12px}
@@ -376,6 +387,7 @@
 <div id="modeOverlay" role="dialog" aria-modal="true" aria-labelledby="modeTitle">
   <div id="modeCard">
     <h2 id="modeTitle">🕵️ Undercover: Kasus Kejahatan Siber</h2>
+    <div id="modeChoices">
     <p>Pilih mode permainan</p>
     <button class="modeBtn" id="modeStoryBtn" type="button">
       <b>📖 Story</b>
@@ -385,6 +397,18 @@
       <b>🔧 Simulasi</b>
       <small>Bebas merancang rangkaian gerbang logika (AND, OR, NOT, XOR, NAND, NOR) tanpa soal atau tantangan.</small>
     </button>
+    </div>
+    <!-- Langkah isi nama panggilan: dibuka MenuScene.ts saat Story dipilih -->
+    <div id="nameStep">
+      <p>Penyamaranmu dimulai. Siapa nama panggilanmu?</p>
+      <label for="nameInput">Nama ini dipakai sebagai nama karakter di seluruh cerita.</label>
+      <input id="nameInput" type="text" maxlength="12" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="Contoh: Raka" aria-describedby="nameHint">
+      <div id="nameHint" role="alert"></div>
+      <div id="nameRow">
+        <button id="nameBackBtn" type="button">← Kembali</button>
+        <button id="nameOkBtn" type="button">▶ Mulai</button>
+      </div>
+    </div>
   </div>
 </div>
 

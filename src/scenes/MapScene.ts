@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { GameState, dist, dirFromDelta, Direction, TIME_INTERVAL_MS } from '../state/GameState';
 import { NpcConfig, NpcLine, DialogueLine, AMBIENT_NPCS, CHAPTERS } from '../state/Chapters';
-import { Hud } from '../state/Hud';
+import { Hud, playerSpeakerLabel } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP, CHAR_HEIGHT_MAP } from '../state/Sprites';
 import { showMissionComplete, showChapterTransition } from '../ui/MissionComplete';
 import { mountStoryMenuButton } from '../ui/StoryMenu';
@@ -146,6 +146,7 @@ export class MapScene extends Phaser.Scene {
 
   create(): void {
     this.state = this.registry.get('state') as GameState;
+    Hud.setPlayerName(this.state.displayName);   // nama panggilan pemain utk label dialog
 
     // Scene ini bisa dimulai ulang (tamat -> Menu -> Story lagi). Phaser memakai ulang instance yang sama,
     // jadi field class TIDAK diinisialisasi ulang — reset manual di sini supaya tidak membawa sisa permainan lama.
@@ -799,7 +800,7 @@ export class MapScene extends Phaser.Scene {
   private showNpcLine(npc: Person): void {
     const line = npc.dialogues[npc.dialogueIndex];
     // Potret: MC selalu di kiri, NPC yang diajak bicara di kanan.
-    Hud.showDialogue(line.who === 'Aku' ? '🧑 Aku' : npc.name, line.text,
+    Hud.showDialogue(line.who === 'Aku' ? playerSpeakerLabel() : npc.name, line.text,
       { npcChar: npc.charKey, speaker: line.who === 'Aku' ? 'me' : 'npc' });
   }
 

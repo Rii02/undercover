@@ -12,6 +12,15 @@ export const SLOT_ICON: Record<TimeSlot, string> = {
 
 export const TIME_INTERVAL_MS = 25_000;
 
+/** Nama bawaan karakter kalau pemain belum mengisi nama (mis. simpanan lama). */
+export const DEFAULT_PLAYER_NAME = 'Aku';
+export const MAX_PLAYER_NAME = 12;
+
+/** Bersihkan input nama: buang karakter kontrol & spasi ganda, potong ke MAX_PLAYER_NAME. Hasil kosong = tidak valid. */
+export function sanitizePlayerName(raw: string): string {
+  return raw.replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_PLAYER_NAME).trim();
+}
+
 function emptyLog(): Record<TimeSlot, HouseStatus | null> {
   return { Pagi: null, Siang: null, Sore: null, Malam: null };
 }
@@ -36,6 +45,8 @@ export class GameState {
   mode: GameMode = 'menu';
   /** true = ada Story yang sedang berjalan & belum tamat -> menu menawarkan "Lanjutkan Story". */
   storyInProgress = false;
+  /** Nama panggilan karakter pemain di mode Story (diisi di menu saat memulai Story baru). */
+  playerName = '';
 
   // Perubahan caseSolved & briefingSeen otomatis menyimpan progres.
   private _caseSolved = false;
@@ -54,7 +65,7 @@ export class GameState {
     SaveGame.write({
       v: 1, mode: this.mode, chapterIndex: this.chapterIndex, slotIdx: this.slotIdx,
       observationLog: { ...this.observationLog }, caseSolved: this._caseSolved, briefingSeen: this._briefingSeen,
-      storyInProgress: this.storyInProgress
+      storyInProgress: this.storyInProgress, playerName: this.playerName
     });
   }
 
@@ -63,6 +74,7 @@ export class GameState {
     this.quiet = true;
     this.mode = d.mode;
     this.storyInProgress = d.storyInProgress ?? d.mode === 'story';
+    this.playerName = typeof d.playerName === 'string' ? sanitizePlayerName(d.playerName) : '';
     this.chapterIndex = Math.min(Math.max(0, d.chapterIndex), CHAPTERS.length - 1);
     this.slotIdx = ((d.slotIdx % SLOTS.length) + SLOTS.length) % SLOTS.length;
     const log = emptyLog();
@@ -74,6 +86,11 @@ export class GameState {
     this.suspicion = 0;
     this.nextTimeChange = Date.now() + TIME_INTERVAL_MS;
     this.quiet = false;
+  }
+
+  /** Nama yang ditampilkan di dialog (nama panggilan, atau 'Aku' kalau belum diisi). */
+  get displayName(): string {
+    return this.playerName || DEFAULT_PLAYER_NAME;
   }
 
   get chapter(): ChapterConfig {

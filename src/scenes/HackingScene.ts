@@ -185,7 +185,7 @@ export class HackingScene extends Phaser.Scene {
     }
     const { level, puzzle } = this.step;
     const parts: string[] = [];
-    if (this.stepIdx === 0) this.state.chapter.hackIntro.forEach(l => parts.push(esc(l)));
+    if (this.stepIdx === 0) this.state.chapter.hackIntro.forEach(l => parts.push(esc(l.replace(/^Aku:/, `${this.state.displayName}:`))));
     parts.push(`&gt; Level ${level.level}: ${esc(level.title)} (soal ${this.stepIdx + 1}/${this.steps.length})`);
     if (puzzle.context) parts.push(`&gt; ${esc(puzzle.context)}`);
     if (SHOW_FORMULA) parts.push(`&gt; Target: ${esc(puzzle.label)}`);

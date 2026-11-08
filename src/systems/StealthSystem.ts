@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { StealthConfig } from '../state/Chapters';
 import type { Direction } from '../state/GameState';
-import { dist } from '../state/GameState';
+import { dirFromDelta, dist } from '../state/GameState';
 import { Hud } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP, CHAR_HEIGHT_MAP } from '../state/Sprites';
 
@@ -635,6 +635,11 @@ export class StealthSystem {
     const out: number[] = [];
     for (let c = b; ; c = prev[c]) { out.push(c); if (c === a) break; }
     return out.reverse();
+  }
+
+  private pathPts(a: number, b: number): Pt[] | null {
+    const cells = this.pathCells(a, b);
+    return cells ? cells.map(c => this.ptOf(c)) : null;
   }
 
   // ------------------------------------------------------------------ penempatan

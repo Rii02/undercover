@@ -17,6 +17,8 @@ export interface SaveData {
   briefingSeen: boolean;
   /** Ada Story yang belum tamat (dipakai tombol "Lanjutkan Story" di menu). Opsional utk kompatibilitas simpanan lama. */
   storyInProgress?: boolean;
+  /** Nama panggilan pemain (karakter Story). Opsional utk kompatibilitas simpanan lama. */
+  playerName?: string;
 }
 
 const KEY = 'detektifBakso.save.v1';
