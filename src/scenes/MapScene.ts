@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, dist, dirFromDelta, Direction, TIME_INTERVAL_MS } from '../state/GameState';
+import { GameState, dist, dirFromDelta, Direction, TIME_INTERVAL_MS, SCORE_START } from '../state/GameState';
 import { NpcConfig, NpcLine, DialogueLine, AMBIENT_NPCS, CHAPTERS } from '../state/Chapters';
 import { Hud, playerSpeakerLabel } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP, CHAR_HEIGHT_MAP } from '../state/Sprites';
@@ -897,7 +897,12 @@ export class MapScene extends Phaser.Scene {
     this.scene.pause();
     // Chapter 1..N-1: tombol "Lanjut" -> transisi pindah peta. Chapter terakhir: tombol "Complete" -> layar Mission Complete.
     const ctaLabel = hasNext ? 'Lanjut ke Chapter Berikutnya ▶' : '✅ Complete';
-    this.playStory(chapter.debriefingLog, ctaLabel, () => {
+    // Setelah laporan Bos, tampilkan skor chapter (kesalahan di chapter ini + skor total saat ini).
+    const scoreLine: DialogueLine = {
+      speaker: 'Narasi',
+      text: `📊 Kesalahan di chapter ini: ${this.state.chapterErrorCount}. Skor ${this.state.displayName} sekarang: ${this.state.score} / ${SCORE_START}.`
+    };
+    this.playStory([...chapter.debriefingLog, scoreLine], ctaLabel, () => {
       this.overlayOpen = true;
       if (hasNext) {
         const next = CHAPTERS[this.state.chapterIndex + 1];
@@ -907,7 +912,7 @@ export class MapScene extends Phaser.Scene {
           () => { this.overlayOpen = false; this.showBriefingThenPause(); }
         );
       } else {
-        showMissionComplete({ chapterId: chapter.id, chapterTitle: chapter.title }, () => {
+        showMissionComplete({ chapterId: chapter.id, chapterTitle: chapter.title, playerName: this.state.displayName, score: this.state.score }, () => {
           // Tamat: kembali ke menu pilih mode. Progres di-reset saat Story dipilih lagi (MenuScene).
           this.overlayOpen = false;
           this.state.storyInProgress = false;   // tamat: menu tidak menawarkan "Lanjutkan" lagi

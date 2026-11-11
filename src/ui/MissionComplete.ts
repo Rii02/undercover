@@ -15,6 +15,10 @@
 export interface MissionCompleteOptions {
   chapterId: number;
   chapterTitle: string;
+  /** Nama panggilan pemain — ditampilkan bersama skor akhir (bila diisi). */
+  playerName?: string;
+  /** Skor akhir Story (0-100). Kalau tidak diisi, blok skor tidak ditampilkan. */
+  score?: number;
 }
 
 export interface ChapterTransitionOptions {
@@ -57,6 +61,12 @@ const CSS = `
 .mc-sub{font-size:13px;color:#f5a623;letter-spacing:.06em;opacity:0;animation:mc-up .5s ease-out 2.1s forwards}
 .mc-stars{display:flex;gap:10px;font-size:26px}
 .mc-stars span{opacity:0;transform:scale(0) rotate(-90deg);animation:mc-star .5s cubic-bezier(.2,1.6,.4,1) both}
+.mc-score{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 22px;border-radius:10px;border:2px solid #f5a623;background:rgba(245,166,35,.08);
+  opacity:0;transform:translateY(10px);animation:mc-up .5s ease-out 2.45s forwards}
+.mc-score-name{font-size:14px;color:#eef2f7;letter-spacing:.06em;word-break:break-word;max-width:80vw}
+.mc-score-label{font-size:11px;letter-spacing:.3em;color:#f5a623}
+.mc-score-num{font-size:clamp(30px,9vw,46px);font-weight:900;color:#ffe066;text-shadow:0 0 12px rgba(255,224,102,.6);line-height:1.1}
+.mc-score-num small{font-size:.4em;color:#7a8a99;font-weight:700;text-shadow:none}
 .mc-btn{margin-top:6px;padding:11px 22px;border-radius:8px;border:2px solid #3dff6a;background:#0d2b16;color:#3dff6a;
   font:700 14px monospace;cursor:pointer;opacity:0;transform:translateY(10px);animation:mc-up .5s ease-out 2.7s forwards}
 .mc-btn:hover,.mc-btn:focus-visible{background:#3dff6a;color:#001208;outline:none}
@@ -103,10 +113,10 @@ const CSS = `
   .ct-tag,.ct-num,.ct-title,.ct-dots{opacity:1;transform:none}.ct-line{width:min(260px,60vw)}
 }
 @media (prefers-reduced-motion:reduce){
-  .mc-overlay,.mc-flash,.mc-rays,.mc-badge,.mc-badge path,.mc-letter,.mc-line,.mc-sub,.mc-stars span,.mc-btn,.mc-spark{animation:none!important}
+  .mc-overlay,.mc-flash,.mc-rays,.mc-badge,.mc-badge path,.mc-letter,.mc-line,.mc-sub,.mc-stars span,.mc-score,.mc-btn,.mc-spark{animation:none!important}
   .mc-flash,.mc-spark{display:none}
   .mc-rays{opacity:1}.mc-badge{transform:none}.mc-badge path{stroke-dashoffset:0}
-  .mc-letter,.mc-sub,.mc-stars span,.mc-btn{opacity:1;transform:none}.mc-line{width:min(320px,70vw)}
+  .mc-letter,.mc-sub,.mc-stars span,.mc-score,.mc-btn{opacity:1;transform:none}.mc-line{width:min(320px,70vw)}
 }`;
 
 function injectStyle(): void {
@@ -177,6 +187,18 @@ export function showMissionComplete(opts: MissionCompleteOptions, onContinue: ()
     stars.appendChild(s);
   }
   card.appendChild(stars);
+
+  // Nama panggilan + skor akhir (textContent, jadi nama aman dari HTML).
+  if (typeof opts.score === 'number') {
+    const box = el('div', 'mc-score');
+    box.setAttribute('aria-label', `Skor akhir ${opts.playerName ?? ''}: ${opts.score} dari 100`);
+    if (opts.playerName) box.appendChild(el('div', 'mc-score-name', `🕵️ ${opts.playerName}`));
+    box.appendChild(el('div', 'mc-score-label', 'SKOR AKHIR'));
+    const num = el('div', 'mc-score-num', String(opts.score));
+    num.appendChild(el('small', '', ' / 100'));
+    box.appendChild(num);
+    card.appendChild(box);
+  }
 
   const btn = el('button', 'mc-btn', '🏆 Selesai');
   btn.type = 'button';

@@ -12,6 +12,10 @@ export const SLOT_ICON: Record<TimeSlot, string> = {
 
 export const TIME_INTERVAL_MS = 25_000;
 
+/** Skor Story: mulai 100, dikurangi 5 tiap salah menekan EKSEKUSI_BOBOL(), tidak pernah di bawah 0. */
+export const SCORE_START = 100;
+export const SCORE_PENALTY = 5;
+
 /** Nama bawaan karakter kalau pemain belum mengisi nama (mis. simpanan lama). */
 export const DEFAULT_PLAYER_NAME = 'Aku';
 export const MAX_PLAYER_NAME = 12;
@@ -19,6 +23,10 @@ export const MAX_PLAYER_NAME = 12;
 /** Bersihkan input nama: buang karakter kontrol & spasi ganda, potong ke MAX_PLAYER_NAME. Hasil kosong = tidak valid. */
 export function sanitizePlayerName(raw: string): string {
   return raw.replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_PLAYER_NAME).trim();
+}
+
+function emptyErrors(): number[] {
+  return CHAPTERS.map(() => 0);
 }
 
 function emptyLog(): Record<TimeSlot, HouseStatus | null> {
@@ -47,6 +55,8 @@ export class GameState {
   storyInProgress = false;
   /** Nama panggilan karakter pemain di mode Story (diisi di menu saat memulai Story baru). */
   playerName = '';
+  /** Jumlah kesalahan EKSEKUSI_BOBOL() per chapter. Skor total diturunkan dari sini (satu skor untuk seluruh chapter). */
+  chapterErrors: number[] = emptyErrors();
 
   // Perubahan caseSolved & briefingSeen otomatis menyimpan progres.
   private _caseSolved = false;
@@ -65,7 +75,8 @@ export class GameState {
     SaveGame.write({
       v: 1, mode: this.mode, chapterIndex: this.chapterIndex, slotIdx: this.slotIdx,
       observationLog: { ...this.observationLog }, caseSolved: this._caseSolved, briefingSeen: this._briefingSeen,
-      storyInProgress: this.storyInProgress, playerName: this.playerName
+      storyInProgress: this.storyInProgress, playerName: this.playerName,
+      chapterErrors: [...this.chapterErrors], score: this.score
     });
   }
 
@@ -75,6 +86,12 @@ export class GameState {
     this.mode = d.mode;
     this.storyInProgress = d.storyInProgress ?? d.mode === 'story';
     this.playerName = typeof d.playerName === 'string' ? sanitizePlayerName(d.playerName) : '';
+    // Simpanan lama (tanpa skor) / data rusak -> mulai dari 0 kesalahan. Skor selalu dihitung ulang dari jumlah kesalahan.
+    const errs = emptyErrors();
+    if (Array.isArray(d.chapterErrors)) {
+      errs.forEach((_, i) => { const v = d.chapterErrors![i]; errs[i] = Number.isInteger(v) && v > 0 ? v : 0; });
+    }
+    this.chapterErrors = errs;
     this.chapterIndex = Math.min(Math.max(0, d.chapterIndex), CHAPTERS.length - 1);
     this.slotIdx = ((d.slotIdx % SLOTS.length) + SLOTS.length) % SLOTS.length;
     const log = emptyLog();
@@ -86,6 +103,35 @@ export class GameState {
     this.suspicion = 0;
     this.nextTimeChange = Date.now() + TIME_INTERVAL_MS;
     this.quiet = false;
+  }
+
+  // ---------------- skor ----------------
+  /** Total salah EKSEKUSI_BOBOL() sepanjang Story. */
+  get totalErrors(): number {
+    return this.chapterErrors.reduce((a, b) => a + b, 0);
+  }
+
+  /** Kesalahan di chapter yang sedang dimainkan. */
+  get chapterErrorCount(): number {
+    return this.chapterErrors[this.chapterIndex] ?? 0;
+  }
+
+  /** Skor total: 100 dikurangi 5 per kesalahan, minimum 0. Hanya kesalahan EKSEKUSI_BOBOL() yang menghitung. */
+  get score(): number {
+    return Math.max(0, SCORE_START - SCORE_PENALTY * this.totalErrors);
+  }
+
+  /** Catat satu kali salah menekan EKSEKUSI_BOBOL() (rangkaian belum sesuai tabel target), simpan otomatis. Mengembalikan skor baru. */
+  recordWrongExecution(): number {
+    this.chapterErrors[this.chapterIndex] = this.chapterErrorCount + 1;
+    this.save();
+    return this.score;
+  }
+
+  /** Kembalikan skor ke 100 (dipanggil saat Story baru dimulai). */
+  resetScore(): void {
+    this.chapterErrors = emptyErrors();
+    this.save();
   }
 
   /** Nama yang ditampilkan di dialog (nama panggilan, atau 'Aku' kalau belum diisi). */

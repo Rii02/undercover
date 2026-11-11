@@ -19,6 +19,10 @@ export interface SaveData {
   storyInProgress?: boolean;
   /** Nama panggilan pemain (karakter Story). Opsional utk kompatibilitas simpanan lama. */
   playerName?: string;
+  /** Jumlah salah menekan EKSEKUSI_BOBOL() per chapter (indeks = chapterIndex). Skor dihitung dari sini. */
+  chapterErrors?: number[];
+  /** Skor total saat disimpan (hanya catatan; saat dimuat skor dihitung ulang dari chapterErrors). */
+  score?: number;
 }
 
 const KEY = 'detektifBakso.save.v1';

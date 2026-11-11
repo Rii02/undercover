@@ -6,6 +6,7 @@ import { InteriorScene } from './scenes/InteriorScene';
 import { HackingScene } from './scenes/HackingScene';
 import { GameState } from './state/GameState';
 import { mountFullscreenButton } from './ui/FullscreenButton';
+import { mountThemeToggle } from './ui/ThemeToggle';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -27,3 +28,6 @@ game.registry.set('state', new GameState());
 
 // Tombol layar penuh (pojok kanan atas, tersedia di menu, Story, dan Simulasi).
 mountFullscreenButton();
+
+// Tombol mode terang/gelap (di atas tombol layar penuh; pilihan tersimpan di localStorage).
+mountThemeToggle();

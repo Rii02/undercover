@@ -5,6 +5,12 @@ import { charFrame, CHAR_COLS, CHAR_ROWS, CHAR_W, CHAR_SHEET_URL } from './Sprit
 /** Nama panggilan pemain yang tampil sebagai label pembicara. Diisi MapScene lewat Hud.setPlayerName(). */
 let playerName = DEFAULT_PLAYER_NAME;
 
+/** Warna toast yang dipakai game -> variabel CSS bertema (mode gelap nilainya sama persis dengan warna aslinya). */
+const TOAST_COLOR_VAR: Record<string, string> = {
+  '#f5a623': 'var(--accent-text)', '#00d9a3': 'var(--good-text)',
+  '#ff6b6b': 'var(--bad-text)', '#ff5555': 'var(--bad-text)', '#ff9f43': 'var(--warn-text)'
+};
+
 /** Label pembicara karakter pemain di kotak dialog (NPC maupun cerita Bos). */
 export const playerSpeakerLabel = (): string => `🧑 ${playerName}`;
 
@@ -111,7 +117,8 @@ export const Hud = {
 
   setToast(text: string, color = '#f5a623'): void {
     this.toast.textContent = text;
-    this.toast.style.color = color;
+    // Warna teks toast dipetakan ke variabel tema supaya tetap terbaca di mode terang & gelap.
+    this.toast.style.color = TOAST_COLOR_VAR[color.toLowerCase()] ?? color;
   },
 
   updateClock(state: GameState): void {

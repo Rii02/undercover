@@ -36,7 +36,7 @@ export class MenuScene extends Phaser.Scene {
       const ch = state.chapter;
       const cont = storyBtn.cloneNode(false) as HTMLButtonElement;
       cont.id = 'modeContinueBtn';
-      cont.textContent = `▶ Lanjutkan Story${state.playerName ? ` — ${state.playerName}` : ''} (Chapter ${ch.id})`;
+      cont.textContent = `▶ Lanjutkan Story${state.playerName ? ` — ${state.playerName}` : ''} · Skor ${state.score} (Chapter ${ch.id})`;
       cont.onclick = () => {
         if (starting) return;
         starting = true;
@@ -88,6 +88,7 @@ export class MenuScene extends Phaser.Scene {
           close();
           card.classList.remove('naming');
           state.playerName = name;
+          state.resetScore();     // Story baru: skor kembali 100
           state.mode = 'story';
           state.storyInProgress = true;
           state.loadChapter(0);   // sekaligus menyimpan progres awal (termasuk nama)

@@ -4,17 +4,49 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Undercover: Kasus Kejahatan Siber - Chapter 1</title>
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0a0e1a">
+<script>
+  /* Terapkan tema tersimpan (atau preferensi sistem) SEBELUM halaman digambar, supaya tidak ada kilatan warna salah.
+     Kunci penyimpanan harus sama dengan THEME_KEY di src/ui/ThemeToggle.ts (tombol ganti tema). */
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('undercover-theme'); } catch (e) {}
+    if (t !== 'light' && t !== 'dark') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 <style>
+  /* ==== Tema ====
+     Gelap = bawaan di :root. Terang = :root[data-theme="light"]. Atribut data-theme dipasang oleh skrip kecil di <head>
+     (tema tersimpan atau preferensi sistem) dan diganti oleh tombol tema (src/ui/ThemeToggle.ts).
+     Terminal hacking (--term-*) sengaja tetap gelap di kedua tema, seperti layar komputer di dalam game. */
   :root{
+    color-scheme:dark;
     --bg:#0a0e1a; --panel:#161d2e; --accent:#f5a623; --on:#ffd93d; --off:#3d4759;
     --wire:#5b6b7f; --wireOn:#ffd93d; --text:#eef2f7; --good:#00d9a3; --bad:#ff6b6b;
     --term-bg:#001208; --term-text:#3dff6a; --term-dim:#1e8f3e;
+    /* varian untuk TEKS berwarna (kontras cukup di atas --bg/--panel) */
+    --accent-text:#f5a623; --good-text:#00d9a3; --bad-text:#ff6b6b; --warn-text:#ff9f43;
+    --scrim:rgba(5,8,16,.92); --shadow-lg:rgba(0,0,0,.6);
+    /* jendela file manager (bukti) */
+    --fm-bg:#1b2233; --fm-text:#e6eaf2; --fm-border:#3a455c; --fm-bar:#232c40; --fm-bar2:#1f283a;
+    --fm-line:#34405a; --fm-line2:#2c3650; --fm-line3:#263048; --fm-dim:#8b97ad; --fm-sub:#aab4c6; --fm-sub2:#9aa5ba;
+    --fm-hover:#26324a; --fm-sel:#2b4470; --fm-note-bg:#3a321a; --fm-note-border:#6b5a25; --fm-stripe:#1e2638;
+    --fm-hl:#ff8a80; --fm-badge-bg:#12392a; --fm-badge-text:#6fe3a0;
   }
-  @media (prefers-color-scheme: light){
-    :root:not([data-theme="dark"]){
-      --bg:#eef0fb; --panel:#ffffff; --accent:#f5a623; --on:#ffd93d; --off:#c7c9de;
-      --wire:#9aa4b5; --wireOn:#e8a900; --text:#22243a; --good:#00b389; --bad:#e0433d;
-    }
+  :root[data-theme="light"]{
+    color-scheme:light;
+    --bg:#eef0fb; --panel:#ffffff; --accent:#f5a623; --on:#ffd93d; --off:#c7c9de;
+    --wire:#9aa4b5; --wireOn:#e8a900; --text:#22243a; --good:#00b389; --bad:#e0433d;
+    --accent-text:#9a5b00; --good-text:#007a5e; --bad-text:#c0322c; --warn-text:#a65300;
+    --scrim:rgba(238,240,251,.94); --shadow-lg:rgba(30,34,70,.28);
+    --fm-bg:#fff; --fm-text:#1f2430; --fm-border:#c5c9d3; --fm-bar:#e9ebf0; --fm-bar2:#f6f7f9;
+    --fm-line:#d3d6de; --fm-line2:#e0e3ea; --fm-line3:#eceef3; --fm-dim:#8a90a0; --fm-sub:#4a5060; --fm-sub2:#5a6070;
+    --fm-hover:#eef4ff; --fm-sel:#cfe2ff; --fm-note-bg:#fff8e6; --fm-note-border:#f1dfa6; --fm-stripe:#fafbfd;
+    --fm-hl:#b3261e; --fm-badge-bg:#e3f6ea; --fm-badge-text:#17753a;
   }
   *{box-sizing:border-box; touch-action:manipulation}
   html,body{height:100%;margin:0}
@@ -47,7 +79,7 @@
   .dpad{display:grid; grid-template-columns:repeat(3,44px); grid-template-rows:repeat(3,44px); gap:4px; justify-content:center; margin-top:8px}
   .dpad button{border:none; border-radius:10px; background:var(--off); color:var(--text); font-size:1rem; cursor:pointer}
   .dpad button:active{background:var(--accent)}
-  #toast{min-height:1.3em; font-size:clamp(.8rem, 1vw + 1vh, 1.3rem); text-align:center; font-weight:600; color:var(--accent); margin-top:4px}
+  #toast{min-height:1.3em; font-size:clamp(.8rem, 1vw + 1vh, 1.3rem); text-align:center; font-weight:600; color:var(--accent-text); margin-top:4px}
 
   /* ==== Layout dua-kolom di dalam tiap panel: kolom kanvas game + kolom sidebar kontrol.
      Di mobile (default) kolom ditumpuk vertikal; di desktop (lihat media query di bawah)
@@ -60,9 +92,9 @@
   #mapView{position:relative}
   #dialogBox{display:none; position:absolute; left:8px; right:8px; bottom:12px; z-index:20;
     background:var(--panel); border:3px solid var(--accent); border-radius:14px; padding:16px 18px;
-    box-shadow:0 8px 26px rgba(0,0,0,.5)}
+    box-shadow:0 8px 26px var(--shadow-lg)}
   #dialogBox.show{display:block}
-  #dialogName{font-weight:700; font-size:clamp(1rem, 1.6vw + 1vh, 1.5rem); color:var(--accent); margin-bottom:6px}
+  #dialogName{font-weight:700; font-size:clamp(1rem, 1.6vw + 1vh, 1.5rem); color:var(--accent-text); margin-bottom:6px}
   #dialogText{font-size:clamp(1rem, 1.5vw + 1vh, 1.45rem); line-height:1.5; min-height:4.5em; max-height:45vh; overflow-y:auto; margin-bottom:10px; cursor:pointer}
   #dialogCtaBtn{display:none; width:100%; border:none; border-radius:8px; padding:14px 6px; font-weight:700; font-size:clamp(.95rem, 1.2vw + 1vh, 1.3rem); cursor:pointer; background:var(--good); color:#08251c}
   #dialogHint{display:none; font-size:clamp(.8rem, .9vw + .8vh, 1.05rem); opacity:.7; text-align:right; cursor:pointer; padding:4px 0}
@@ -78,9 +110,9 @@
     align-items:center; justify-content:center; padding:12px; border-radius:14px}
   #logPopup.show{display:flex}
   #logPopupCard{background:var(--panel); border:2px solid var(--accent); border-radius:12px; padding:12px 14px;
-    width:100%; max-width:460px; box-shadow:0 8px 28px rgba(0,0,0,.5)}
+    width:100%; max-width:460px; box-shadow:0 8px 28px var(--shadow-lg)}
   #logPopupHead{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;
-    font-weight:700; font-size:.85rem; color:var(--accent)}
+    font-weight:700; font-size:.85rem; color:var(--accent-text)}
   #logPopupClose{border:none; background:var(--off); color:var(--text); border-radius:50%; width:26px; height:26px;
     cursor:pointer; font-size:.8rem; padding:0}
   #logPopupNote{font-size:.68rem; opacity:.65; margin:8px 0 0}
@@ -91,9 +123,9 @@
 
 
   /* ==== Popup pilih mode (Story / Simulasi) ==== */
-  #modeOverlay{display:none; position:fixed; inset:0; z-index:1000; background:rgba(5,8,16,.92); align-items:center; justify-content:center; padding:16px}
+  #modeOverlay{display:none; position:fixed; inset:0; z-index:1000; background:var(--scrim); align-items:center; justify-content:center; padding:16px}
   #modeOverlay.show{display:flex}
-  #modeCard{background:var(--panel); border:3px solid var(--accent); border-radius:20px; padding:clamp(24px,4vh,44px) clamp(22px,3vw,48px); width:100%; max-width:760px; box-shadow:0 14px 48px rgba(0,0,0,.65); text-align:center}
+  #modeCard{background:var(--panel); border:3px solid var(--accent); border-radius:20px; padding:clamp(24px,4vh,44px) clamp(22px,3vw,48px); width:100%; max-width:760px; box-shadow:0 14px 48px var(--shadow-lg); text-align:center}
   #modeCard h2{margin:0 0 8px; font-size:clamp(1.5rem,2.4vw + 1vh,2.4rem); line-height:1.2}
   #modeCard p{margin:0 0 clamp(16px,3vh,30px); opacity:.75; font-size:clamp(1rem,1vw + 1vh,1.35rem)}
   .modeBtn{display:block; width:100%; text-align:left; border:3px solid var(--wire); border-radius:16px; padding:clamp(18px,3vh,30px) clamp(18px,2.4vw,32px); margin-top:clamp(12px,2vh,20px); cursor:pointer; background:var(--bg); color:var(--text); font-family:inherit; transition:transform .12s, border-color .12s}
@@ -108,7 +140,7 @@
   #nameStep label{display:block; margin:0 0 12px; font-size:clamp(1rem,1vw + 1vh,1.35rem); opacity:.85}
   #nameInput{width:100%; max-width:420px; padding:14px 16px; border-radius:12px; border:3px solid var(--accent); background:var(--bg); color:var(--text); font-weight:700; font-size:clamp(1.1rem,1.2vw + 1vh,1.5rem); font-family:inherit; text-align:center}
   #nameInput:focus-visible{outline:3px solid var(--good); outline-offset:2px}
-  #nameHint{min-height:1.4em; margin:8px 0 0; font-size:.9rem; color:var(--bad)}
+  #nameHint{min-height:1.4em; margin:8px 0 0; font-size:.9rem; color:var(--bad-text)}
   #nameRow{display:flex; gap:10px; justify-content:center; margin-top:clamp(14px,2.4vh,24px)}
   #nameRow button{flex:1; max-width:210px; border:none; border-radius:12px; padding:14px 10px; font-weight:700; font-size:clamp(.95rem,1vw + 1vh,1.25rem); cursor:pointer; font-family:inherit; background:var(--off); color:var(--text)}
   #nameRow button#nameOkBtn{background:var(--good); color:#08251c}
@@ -116,41 +148,41 @@
   /* ==== File manager bukti (tampilan file manager biasa, terang) ==== */
   #fmOverlay{display:none; position:fixed; inset:0; z-index:900; background:rgba(15,18,28,.6); align-items:center; justify-content:center; padding:12px}
   #fmOverlay.show{display:flex}
-  #fmWindow{display:flex; flex-direction:column; width:min(1000px,100%); height:min(680px,92dvh); background:#fff; color:#1f2430; border:1px solid #c5c9d3; border-radius:10px; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif; box-shadow:0 20px 60px rgba(0,0,0,.45)}
-  #fmTitleBar{display:flex; align-items:center; gap:8px; padding:9px 12px; background:#e9ebf0; border-bottom:1px solid #d3d6de; font-size:.9rem; font-weight:600}
+  #fmWindow{display:flex; flex-direction:column; width:min(1000px,100%); height:min(680px,92dvh); background:var(--fm-bg); color:var(--fm-text); border:1px solid var(--fm-border); border-radius:10px; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif; box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  #fmTitleBar{display:flex; align-items:center; gap:8px; padding:9px 12px; background:var(--fm-bar); border-bottom:1px solid var(--fm-line); font-size:.9rem; font-weight:600}
   #fmTitleBar .dot{width:12px; height:12px; border-radius:50%; border:none; padding:0; display:inline-block}
   #fmTitleBar .r{background:#ff5f57; cursor:pointer} #fmTitleBar .y{background:#febc2e} #fmTitleBar .g{background:#28c840}
   #fmTitle{flex:1; text-align:center; margin-right:44px}
-  #fmToolbar{display:flex; align-items:center; gap:8px; padding:8px 12px; background:#f6f7f9; border-bottom:1px solid #e0e3ea}
-  #fmToolbar .nav{color:#9aa0ad; font-size:1.1rem; letter-spacing:6px}
-  #fmPath{flex:1; background:#fff; border:1px solid #d3d6de; border-radius:6px; padding:6px 10px; font-size:.85rem; color:#4a5060; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  #fmListWrap{flex:0 0 auto; max-height:38%; overflow-y:auto; border-bottom:1px solid #e0e3ea}
+  #fmToolbar{display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--fm-bar2); border-bottom:1px solid var(--fm-line2)}
+  #fmToolbar .nav{color:var(--fm-dim); font-size:1.1rem; letter-spacing:6px}
+  #fmPath{flex:1; background:var(--fm-bg); border:1px solid var(--fm-line); border-radius:6px; padding:6px 10px; font-size:.85rem; color:var(--fm-sub); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  #fmListWrap{flex:0 0 auto; max-height:38%; overflow-y:auto; border-bottom:1px solid var(--fm-line2)}
   #fmTable{width:100%; border-collapse:collapse; font-size:.92rem}
-  #fmTable th{position:sticky; top:0; background:#f6f7f9; text-align:left; font-weight:600; font-size:.8rem; color:#5a6070; padding:7px 14px; border-bottom:1px solid #e0e3ea}
-  #fmTable td{padding:9px 14px; border-bottom:1px solid #f0f1f5; white-space:nowrap}
+  #fmTable th{position:sticky; top:0; background:var(--fm-bar2); text-align:left; font-weight:600; font-size:.8rem; color:var(--fm-sub2); padding:7px 14px; border-bottom:1px solid var(--fm-line2)}
+  #fmTable td{padding:9px 14px; border-bottom:1px solid var(--fm-line3); white-space:nowrap}
   #fmTable tr.fmRow{cursor:pointer}
-  #fmTable tr.fmRow:hover td{background:#eef4ff}
-  #fmTable tr.fmRow.sel td{background:#cfe2ff}
+  #fmTable tr.fmRow:hover td{background:var(--fm-hover)}
+  #fmTable tr.fmRow.sel td{background:var(--fm-sel)}
   #fmTable td.nm{width:100%; font-weight:500} #fmTable td.nm .ic{margin-right:8px}
   #fmTable td.sz,#fmTable th.sz{text-align:right}
-  #fmPreview{flex:1; overflow:auto; padding:16px 20px; font-size:.95rem; line-height:1.55; background:#fff}
-  #fmPreview .fmEmpty{color:#8a90a0; text-align:center; margin-top:8%}
+  #fmPreview{flex:1; overflow:auto; padding:16px 20px; font-size:.95rem; line-height:1.55; background:var(--fm-bg)}
+  #fmPreview .fmEmpty{color:var(--fm-dim); text-align:center; margin-top:8%}
   #fmPreview h3{margin:0 0 2px; font-size:1.05rem}
-  #fmPreview .fmMeta{color:#8a90a0; font-size:.8rem; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #eceef3}
-  #fmPreview .fmNote{background:#fff8e6; border:1px solid #f1dfa6; border-radius:8px; padding:10px 12px; margin-bottom:12px}
+  #fmPreview .fmMeta{color:var(--fm-dim); font-size:.8rem; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--fm-line3)}
+  #fmPreview .fmNote{background:var(--fm-note-bg); border:1px solid var(--fm-note-border); border-radius:8px; padding:10px 12px; margin-bottom:12px}
   #fmPreview .fmLine{margin:0 0 8px}
   .fmTxTitle{font-weight:600; margin:4px 0 8px}
-  .fmTxWrap{overflow-x:auto; border:1px solid #dfe2ea; border-radius:8px}
+  .fmTxWrap{overflow-x:auto; border:1px solid var(--fm-line2); border-radius:8px}
   table.fmTx{width:100%; border-collapse:collapse; font-size:.85rem}
-  table.fmTx th{background:#f3f5f9; text-align:left; font-weight:600; padding:8px 10px; border-bottom:1px solid #dfe2ea; white-space:nowrap}
-  table.fmTx td{padding:8px 10px; border-bottom:1px solid #eef0f5; vertical-align:top}
-  table.fmTx tr:nth-child(even) td{background:#fafbfd}
+  table.fmTx th{background:var(--fm-bar2); text-align:left; font-weight:600; padding:8px 10px; border-bottom:1px solid var(--fm-line2); white-space:nowrap}
+  table.fmTx td{padding:8px 10px; border-bottom:1px solid var(--fm-line3); vertical-align:top}
+  table.fmTx tr:nth-child(even) td{background:var(--fm-stripe)}
   table.fmTx td.amt,table.fmTx th.amt{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums}
-  table.fmTx td.hl{color:#b3261e; font-weight:600}
-  .fmBadge{display:inline-block; padding:2px 8px; border-radius:999px; background:#e3f6ea; color:#17753a; font-size:.75rem; font-weight:600; white-space:nowrap}
-  .fmTxSum{display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 4px 0; font-size:.88rem; color:#4a5060}
-  #fmFoot{display:flex; align-items:center; gap:12px; padding:9px 14px; border-top:1px solid #e0e3ea; background:#f6f7f9}
-  #fmStatus{flex:1; font-size:.85rem; color:#5a6070}
+  table.fmTx td.hl{color:var(--fm-hl); font-weight:600}
+  .fmBadge{display:inline-block; padding:2px 8px; border-radius:999px; background:var(--fm-badge-bg); color:var(--fm-badge-text); font-size:.75rem; font-weight:600; white-space:nowrap}
+  .fmTxSum{display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 4px 0; font-size:.88rem; color:var(--fm-sub)}
+  #fmFoot{display:flex; align-items:center; gap:12px; padding:9px 14px; border-top:1px solid var(--fm-line2); background:var(--fm-bar2)}
+  #fmStatus{flex:1; font-size:.85rem; color:var(--fm-sub2)}
   #fmCloseBtn{border:none; border-radius:8px; padding:10px 18px; font:inherit; font-weight:600; font-size:.9rem; cursor:pointer; background:#2f6fed; color:#fff}
   #fmCloseBtn:hover{background:#2459c8}
   @media (max-width:640px){ #fmTable td.tp,#fmTable th.tp{display:none} #fmFoot{flex-direction:column; align-items:stretch} #fmToolbar .nav{display:none} }
@@ -336,6 +368,7 @@
     <h2>💻 TERMINAL AKSES — MEMBOBOL FIREWALL</h2>
     <p class="termline">&gt; Menyusup ke rumah target selagi kosong...</p>
     <p class="termline">&gt; Sistem keamanan mendeteksi pola sinyal acak. Susun sirkuit logika untuk mencocokkan pola yang dibutuhkan agar firewall terbuka.</p>
+    <p class="termline" id="hackScoreLine"></p>
     <p class="termline" id="hackHintLine"></p>
     <div id="hackBody">
       <div id="hackCircuitCol">

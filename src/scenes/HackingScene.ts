@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState } from '../state/GameState';
+import { GameState, SCORE_START, SCORE_PENALTY } from '../state/GameState';
 import { Hud } from '../state/Hud';
 import { HACK_LEVELS, GateType, HackLevel, HackPuzzle } from '../state/HackLevels';
 
@@ -74,6 +74,7 @@ export class HackingScene extends Phaser.Scene {
     if (this.sim) document.getElementById('mapView')!.style.display = 'none';
     document.getElementById('hackView')!.style.display = 'block';
     this.setupModeUi();
+    this.updateScoreLine();
 
     this.steps = [];
     if (this.sim) {
@@ -313,6 +314,13 @@ export class HackingScene extends Phaser.Scene {
     if (this.sim) this.updateLiveTable();
   }
 
+  /** Tampilkan skor berjalan di terminal (hanya Story; di Simulasi barisnya disembunyikan oleh setupModeUi). */
+  private updateScoreLine(): void {
+    const el = document.getElementById('hackScoreLine');
+    if (!el || this.sim) return;
+    el.textContent = `> Skor ${this.state.displayName}: ${this.state.score} / ${SCORE_START}  (−${SCORE_PENALTY} tiap EKSEKUSI_BOBOL() yang salah)`;
+  }
+
   // ---------------------------------------------------------------- mode Simulasi
 
   /** Atur visibilitas tombol/judul sesuai mode (Story vs Simulasi). */
@@ -376,7 +384,15 @@ export class HackingScene extends Phaser.Scene {
     const status = document.getElementById('hackStatus')!;
     const checkBtn = document.getElementById('checkBtn') as HTMLButtonElement;
     if (!allMatch) {
-      status.textContent = '❌ ' + this.state.chapter.hackFailText;
+      // Skor Story: -5 tiap rangkaian belum sesuai tabel target (minimum 0). Mode Simulasi tidak punya skor.
+      let scoreNote = '';
+      if (!this.sim) {
+        const before = this.state.score;
+        const after = this.state.recordWrongExecution();
+        scoreNote = before > after ? `<br>⚠️ Skor −${SCORE_PENALTY}: ${before} → ${after}` : `<br>⚠️ Skor tetap ${after} (sudah di batas minimum)`;
+        this.updateScoreLine();
+      }
+      status.innerHTML = '❌ ' + esc(this.state.chapter.hackFailText) + scoreNote;
       status.style.color = '#ff6b6b';
       return;
     }
