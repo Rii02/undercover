@@ -99,11 +99,20 @@ Versi ini disusun ulang supaya **sama persis** secara visual & perilaku dengan
   API (persis kode aslinya), hanya dibungkus siklus hidup `HackingScene`
   Phaser untuk pause/resume yang rapi saat masuk/keluar minigame.
 
+## Konteks puzzle gerbang logika
+
+Puzzle ada di `src/state/HackLevels.ts`. Tiap puzzle adalah **simulasi rangkaian logika** dari modul kontrol/indikator
+pada perangkat yang diceritakan (kunci elektronik, indikator status, pemilih jalur sinyal). Gerbang logika adalah dasar
+rangkaian digital; ia tidak dipakai langsung untuk meretas atau mendekripsi apa pun. Saat menambah/mengubah puzzle,
+pastikan konsisten: persamaan (`label`), `target` (tabel kebenaran), `inputLabels`/`outputLabel`/`lampText`, dan `context`
+menggambarkan perangkat yang sama; setiap input harus memengaruhi keluaran; teks cerita (`hackIntro`, `hackFailText`,
+`hackSuccessText` di `Chapters.ts`) tidak boleh mengklaim gerbang membobol/mendekripsi sesuatu.
+
 ## Langkah lanjutan yang disarankan
 
 - Pindahkan `GATES`/`HACK_TARGET` di `HackingScene.ts` ke file level baru
   kalau mau tambah beberapa "chapter" hacking dengan pola berbeda.
-- Tambahkan `Phaser.Sound` untuk SFX (klik gerbang, firewall bobol, dll).
+- Tambahkan `Phaser.Sound` untuk SFX (klik gerbang, lampu panel menyala, dll).
 - Simpan progres (`GameState`) ke `localStorage` supaya chapter tidak reset
   saat refresh.
 

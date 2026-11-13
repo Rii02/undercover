@@ -199,6 +199,7 @@
   table.tt td, table.tt th{border:1px solid var(--term-dim); padding:3px 8px; text-align:center; color:var(--term-text)}
   .controls2{display:flex; gap:8px; margin-top:10px}
   .ctrl-btn2{flex:1; border:2px solid var(--term-text); border-radius:6px; padding:9px; cursor:pointer; font-weight:700; font-size:.8rem; background:#00220f; color:var(--term-text); font-family:'Courier New',monospace}
+  .hackNote{opacity:.7; font-size:.88em}
   #hackStatus{min-height:1.3em; font-weight:700; text-align:center; font-size:.8rem; margin-top:8px}
   #hackBody{display:flex; flex-direction:column; gap:8px}
 
@@ -365,9 +366,9 @@
 
   <!-- ===== HACKING VIEW ===== -->
   <div class="panel" id="hackView">
-    <h2>💻 TERMINAL AKSES — MEMBOBOL FIREWALL</h2>
+    <h2>💻 TERMINAL AKSES — PANEL KONTROL PERANGKAT</h2>
     <p class="termline">&gt; Menyusup ke rumah target selagi kosong...</p>
-    <p class="termline">&gt; Sistem keamanan mendeteksi pola sinyal acak. Susun sirkuit logika untuk mencocokkan pola yang dibutuhkan agar firewall terbuka.</p>
+    <p class="termline">&gt; Perangkat target dilindungi modul kontrol digital (kunci elektronik atau indikator). Susun rangkaian gerbang logika yang meniru perilaku modul itu sesuai tabel target.</p>
     <p class="termline" id="hackScoreLine"></p>
     <p class="termline" id="hackHintLine"></p>
     <div id="hackBody">
@@ -424,7 +425,7 @@
     <p>Pilih mode permainan</p>
     <button class="modeBtn" id="modeStoryBtn" type="button">
       <b>📖 Story</b>
-      <small>Masuk ke cerita inti: menyamar, mengamati target, membobol sirkuit, dan melapor ke Bos.</small>
+      <small>Masuk ke cerita inti: menyamar, mengamati target, menyusun rangkaian logika modul kontrol, dan melapor ke Bos.</small>
     </button>
     <button class="modeBtn" id="modeSimBtn" type="button">
       <b>🔧 Simulasi</b>

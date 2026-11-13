@@ -166,9 +166,9 @@ export const CHAPTERS: ChapterConfig[] = [
     interiorTitle: 'Rumah Pak Herman',
     interiorLabel: 'Ruang Kerja',
     interiorIntro: 'Pintu samping tidak terkunci rapat. Ruang kerja sempit, bau kopi lama. Satu laptop tua menyala, kipasnya berputar kencang. “Rumah kosong, tapi kipasnya kerja keras. Rina benar.”',
-    hackIntro: ['Layar: folder “keuangan” berikon gembok. Jendela kecil di pojok: Pintu Ganda — proteksi transaksi.'],
+    hackIntro: ['Layar: folder “keuangan” berikon gembok. Jendela kecil di pojok menampilkan modul proteksi Pintu Ganda dengan dua lampu: Akses dan Koneksi. Rangkaian logikanya harus disusun ulang sesuai tabel.'],
     hackFailText: 'AKSES DITOLAK. Percobaan gagal dicatat. Susun ulang gerbangnya.',
-    hackSuccessText: 'Lampu panel berubah OPEN, folder terbuka, kipas laptop melambat.',
+    hackSuccessText: 'Lampu Akses dan Koneksi menyala hijau, folder terbuka, kipas laptop melambat.',
     evidence: [
       {
         name: 'transaksi_0312.csv',
@@ -258,18 +258,18 @@ export const CHAPTERS: ChapterConfig[] = [
     interiorTitle: 'Rumah Mbak Melati',
     interiorLabel: 'Ruang Kerja Steril',
     interiorIntro: 'Rumah rapi, hampir steril. Ada rak berisi puluhan flashdisk bernomor. Di bingkai pintu ruang kerja ada sensor kecil yang kelihatan penting. “Terlalu bersih. Orang serapi ini jarang meninggalkan sesuatu tanpa sengaja.”',
-    hackIntro: ['Layar laptop: ARSIP PESAN: TERKUNCI. Mode senyap aktif.'],
-    hackFailText: 'Pengawas terdeteksi. Arsip menutup diri lagi. Susun ulang rangkaiannya.',
-    hackSuccessText: 'Lampu OPEN, arsip pesan terbuka.',
+    hackIntro: ['Layar laptop: ARSIP PESAN: TERKUNCI. Mode senyap aktif: arsip hanya boleh dibuka saat jaringan tidak dipantau.', 'Panel kecil di samping layar membaca sensor pengawas jaringan dan harus menunjukkan AMAN. Rangkaian pembalik sinyalnya perlu disusun ulang.'],
+    hackFailText: 'Indikator keliru: pengawas masih terdeteksi dan arsip menutup diri lagi. Susun ulang rangkaiannya.',
+    hackSuccessText: 'Lampu AMAN menyala: jaringan sedang tidak dipantau, arsip pesan bisa dibuka tanpa memicu pengawas.',
     evidence: [
       {
-        name: 'pesan_hilang.enc',
-        lines: ['Pesan terenkripsi, sebagian terbaca:', '“…jalur lama masih hidup. jangan lewat Herman lagi, dia mulai curiga. lanjut lewat rumah yang punya rak besi…”']
+        name: 'pesan_hilang.txt',
+        lines: ['Pesan yang sengaja dihapus, sebagian berhasil dipulihkan dari arsip:', '“…jalur lama masih hidup. jangan lewat Herman lagi, dia mulai curiga. lanjut lewat rumah yang punya rak besi…”']
       },
       { name: 'daftar_paket.txt', lines: ['Sebelas alamat tujuan paket, tersebar di desa dan kecamatan lain.'] }
     ],
     debriefingLog: [
-      aku('Bos, ada pesan terenkripsi. Isinya “jalur lama” dan “rak besi”.'),
+      aku('Bos, ada pesan yang sengaja dihapus tapi sebagian masih bisa dipulihkan. Isinya “jalur lama” dan “rak besi”.'),
       bos('Jalur lama... itu bukan hal kecil. Melati bukan pelaku tunggal. Dia kurir data.'),
       aku('Dan Herman?'),
       bos('Herman cuma dipinjam, Melati cuma kurir. Berarti ada yang menyusun semuanya.'),
@@ -339,9 +339,9 @@ export const CHAPTERS: ChapterConfig[] = [
     interiorTitle: 'Rumah Pak Arman',
     interiorLabel: 'Bangunan Seng',
     interiorIntro: 'Gembok besar ternyata hanya penghalang bayangan; pintu seng bisa digeser. Di dalam dingin, penuh lampu hijau kecil. Tiga rak besi, kabel menjalar ke lantai, satu komputer kontrol di tengah. Di salah satu rak ada label: NODE 03. “Ini bukan hobi radio.”',
-    hackIntro: [],
+    hackIntro: ['Panel pengunci kabinet NODE 03 menyala merah: kabinet terkunci. Daya dan sensor tamper-nya terhubung ke rangkaian logika yang harus disusun ulang.'],
     hackFailText: 'Alarm tamper berbunyi di panel, kabinet menutup. Susun ulang rangkaiannya.',
-    hackSuccessText: 'Kabinet terbuka, konfigurasi muncul di layar.',
+    hackSuccessText: 'Kunci kabinet terlepas, kabinet terbuka dan konfigurasi muncul di layar.',
     evidence: [
       {
         name: 'server.conf',
@@ -422,9 +422,9 @@ export const CHAPTERS: ChapterConfig[] = [
     interiorTitle: 'Rumah Tanpa Nama',
     interiorLabel: 'Ruang Kendali',
     interiorIntro: 'Ruangan bersih, hampir tanpa barang pribadi. Satu meja panjang, dua monitor, headset di atasnya. Tidak ada foto, kalender, atau nama. Kopi di cangkir sudah dingin. “Seperti kantor yang dibuat supaya tidak ada orangnya.”',
-    hackIntro: ['Layar utama menampilkan peta empat belas titik yang berkedip. Satu titik di tengah sedikit lebih terang dari yang lain.'],
+    hackIntro: ['Layar utama menampilkan peta empat belas titik yang berkedip. Satu titik di tengah sedikit lebih terang dari yang lain.', 'Di dinding, panel kontrol akses pintu ruang server masih terkunci. Rangkaian logikanya harus disusun ulang sesuai tabel.'],
     hackFailText: 'Peta empat belas titik mengedip merah sekali. Sistem hampir mendeteksimu. Susun ulang rangkaiannya.',
-    hackSuccessText: 'Pintu direktori terbuka, file operator muncul.',
+    hackSuccessText: 'Kunci pintu ruang server terlepas, direktori operator terbuka dan file operator muncul.',
     evidence: [
       { name: 'BLACKBOX_OPERATOR.dat', lines: ['ID: 07', 'STATUS: ACTIVE', 'TOTAL_OPERATOR: 4', 'LAST_ACCESS: 2 menit lalu'] }
     ],
@@ -505,9 +505,9 @@ export const CHAPTERS: ChapterConfig[] = [
     interiorTitle: 'Kos Operator 07',
     interiorLabel: 'Kamar Atas Operator',
     interiorIntro: 'Kamar atas rapi seperti markas kecil: dua monitor, kabel LAN tertata, papan tulis kecil berisi angka 01, 03, 07, 09. “Jadi di sini mereka bergiliran.”',
-    hackIntro: ['Layar: Sesi Operator — menunggu giliran login.', 'Catatan tempel: “Jangan buka log kalau ada orang lain di jaringan.”'],
+    hackIntro: ['Layar: Sesi Operator — menunggu giliran login.', 'Catatan tempel: “Jangan buka log kalau ada orang lain di jaringan.”', 'Papan kendali sesi punya tiga lampu: Kunci Sesi, Status Normal, dan Perangkat Terputus. Rangkaian logikanya harus disusun ulang satu per satu.'],
     hackFailText: 'Di layar muncul pesan pendek: “Tamu belum diundang.” Susun ulang rangkaiannya.',
-    hackSuccessText: 'Tiga lampu OPEN berurutan, log terbuka.',
+    hackSuccessText: 'Tiga lampu menyala berurutan: kunci sesi terlepas, status normal, perangkat terputus dari jaringan. Log terbuka.',
     evidence: [
       {
         name: 'operator_log.txt',
@@ -613,7 +613,7 @@ export const CHAPTERS: ChapterConfig[] = [
       'Operator 07: Kalau kamu ingin tahu... pecahkan rangkaiannya. Aku buka separuh. Jalur utama atau jalur cadangan, tergantung satu saklar. Sisanya urusanmu.'
     ],
     hackFailText: 'Hitungan mundur tetap berjalan dan angkanya merah. Susun ulang rangkaiannya sebelum waktu habis!',
-    hackSuccessText: 'Hitungan mundur berhenti. Koneksi ke Sistem Kabupaten terputus. Bukti utama tersalin.',
+    hackSuccessText: 'Pemilih jalur pulih: perintah penghentian diteruskan lewat jalur yang terpilih. Hitungan mundur berhenti, koneksi ke Sistem Kabupaten terputus, bukti utama tersalin.',
     evidence: [
       {
         name: 'BLACKBOX_MASTER.log',

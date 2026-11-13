@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { GameState, SCORE_START, SCORE_PENALTY } from '../state/GameState';
 import { Hud } from '../state/Hud';
-import { HACK_LEVELS, GateType, HackLevel, HackPuzzle } from '../state/HackLevels';
+import { HACK_LEVELS, GATE_INFO, GateType, HackLevel, HackPuzzle } from '../state/HackLevels';
 
 const GATES: Record<GateType, (a: number, b: number) => number> = {
   AND: (a, b) => (a && b ? 1 : 0),
@@ -26,7 +26,11 @@ const LAMP = { x: 300, y: 200 };
 /** Mode Simulasi: sandbox tanpa target/soal — semua gerbang tersedia, tabel kebenaran dihitung live dari rangkaian pemain. */
 const ALL_GATES: GateType[] = ['AND', 'OR', 'NOT', 'XOR', 'NAND', 'NOR'];
 const SIM_LEVEL: HackLevel = { level: 0, title: 'Simulasi', description: 'Mode bebas', inputs: 3, gates: ALL_GATES, puzzles: [] };
-const SIM_PUZZLE: HackPuzzle = { label: 'Bebas', minGates: 0, target: {} };
+const SIM_PUZZLE: HackPuzzle = { label: 'Bebas', minGates: 0, target: {}, lampText: ['Y=0', 'Y=1'] };
+
+/** Catatan yang selalu tampil di terminal: puzzle = simulasi edukatif, bukan klaim bahwa gerbang logika dipakai langsung untuk meretas. */
+const SIM_NOTE = 'ℹ️ Simulasi edukatif: ini rangkaian logika untuk belajar, bukan representasi lengkap sistem elektronik atau keamanan komersial. '
+  + 'Gerbang logika tidak dipakai langsung untuk meretas.';
 
 type Port = { x: number; y: number; type: 'in' | 'out' };
 interface Step { level: HackLevel; puzzle: HackPuzzle }
@@ -115,7 +119,8 @@ export class HackingScene extends Phaser.Scene {
   }
 
   private inputYs(): number[] {
-    return this.inputValues.length === 3 ? [70, 200, 330] : [100, 300];
+    const n = this.inputValues.length;
+    return n === 3 ? [70, 200, 330] : n === 1 ? [200] : [100, 300];
   }
 
   private ports(): Record<string, Port> {
@@ -155,6 +160,7 @@ export class HackingScene extends Phaser.Scene {
     this.step.level.gates.forEach(name => {
       const chip = document.createElement('div');
       chip.className = 'gate-chip'; chip.textContent = name;
+      chip.title = `${name}: ${GATE_INFO[name]}`;   // fungsi gerbang sbg tooltip
       chip.addEventListener('pointerdown', e => this.startDrag(e, name));
       el.appendChild(chip);
     });
@@ -165,7 +171,7 @@ export class HackingScene extends Phaser.Scene {
     const n = level.inputs;
     const labels = puzzle.inputLabels ?? [];
     let html = '<tr>' + INPUT_NAMES.slice(0, n)
-      .map((l, i) => `<th>Probe ${l}${labels[i] ? `<br><small>${esc(labels[i])}</small>` : ''}</th>`).join('') + '<th>Sinyal</th></tr>';
+      .map((l, i) => `<th>Probe ${l}${labels[i] ? `<br><small>${esc(labels[i])}</small>` : ''}</th>`).join('') + `<th>${esc(puzzle.outputLabel ?? 'Sinyal')}</th></tr>`;
     for (let i = 0; i < 2 ** n; i++) {
       const k = i.toString(2).padStart(n, '0');
       html += '<tr>' + k.split('').map(b => `<td>${b}</td>`).join('') + `<td>${puzzle.target[k] ? '🟢' : '⬛'}</td></tr>`;
@@ -180,7 +186,9 @@ export class HackingScene extends Phaser.Scene {
       el.innerHTML = [
         '&gt; Mode simulasi: rancang rangkaian sesuka hati, tanpa soal.',
         '&gt; Seret gerbang ke kotak, klik titik keluaran (hijau) lalu titik masukan untuk menarik kabel.',
-        '&gt; Klik bulatan A/B/C untuk mengubah 0/1. Tabel kebenaran di samping dihitung otomatis dari rangkaianmu.'
+        '&gt; Klik bulatan A/B/C untuk mengubah 0/1. Tabel kebenaran di samping dihitung otomatis dari rangkaianmu.',
+        ...(Object.keys(GATE_INFO) as GateType[]).map(g => `&gt; ${g}: ${esc(GATE_INFO[g])}`),
+        `<span class="hackNote">${esc(SIM_NOTE)}</span>`
       ].join('<br>');
       return;
     }
@@ -189,8 +197,14 @@ export class HackingScene extends Phaser.Scene {
     if (this.stepIdx === 0) this.state.chapter.hackIntro.forEach(l => parts.push(esc(l.replace(/^Aku:/, `${this.state.displayName}:`))));
     parts.push(`&gt; Level ${level.level}: ${esc(level.title)} (soal ${this.stepIdx + 1}/${this.steps.length})`);
     if (puzzle.context) parts.push(`&gt; ${esc(puzzle.context)}`);
+    // Fungsi singkat gerbang yang baru muncul di level ini (gerbang lain sudah dijelaskan di level sebelumnya / tooltip palet).
+    if (this.stepIdx === 0) {
+      const prev = HACK_LEVELS.find(l => l.level === level.level - 1);
+      level.gates.filter(g => !prev?.gates.includes(g)).forEach(g => parts.push(`&gt; Gerbang ${g}: ${esc(GATE_INFO[g])}`));
+    }
     if (SHOW_FORMULA) parts.push(`&gt; Target: ${esc(puzzle.label)}`);
     parts.push(`&gt; Perkiraan: minimal ${puzzle.minGates} gerbang.`);
+    parts.push(`<span class="hackNote">${esc(SIM_NOTE)}</span>`);
     el.innerHTML = parts.join('<br>');
   }
 
@@ -309,7 +323,8 @@ export class HackingScene extends Phaser.Scene {
     c.beginPath(); c.arc(P.Lamp_in.x + 20, P.Lamp_in.y, 22, 0, Math.PI * 2); c.fill();
     c.strokeStyle = '#1e8f3e'; c.lineWidth = 2; c.stroke();
     c.fillStyle = lv ? '#000' : '#3dff6a'; c.font = '10px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText(lv ? 'OPEN' : 'LOCK', P.Lamp_in.x + 20, P.Lamp_in.y);
+    const [lampOff, lampOn] = this.step.puzzle.lampText ?? ['LOCK', 'OPEN'];
+    c.fillText(lv ? lampOn : lampOff, P.Lamp_in.x + 20, P.Lamp_in.y);
     this.drawPort(P.Lamp_in, false);
     if (this.sim) this.updateLiveTable();
   }
@@ -329,7 +344,7 @@ export class HackingScene extends Phaser.Scene {
     show('simRow', this.sim); show('simMenuRow', this.sim);
     (document.getElementById('checkBtn')!.parentElement as HTMLElement).style.display = this.sim ? 'none' : 'flex';
     const h2 = document.querySelector('#hackView h2');
-    if (h2) h2.textContent = this.sim ? '🔧 SIMULASI GERBANG LOGIKA' : '💻 TERMINAL AKSES — MEMBOBOL FIREWALL';
+    if (h2) h2.textContent = this.sim ? '🔧 SIMULASI GERBANG LOGIKA' : '💻 TERMINAL AKSES — PANEL KONTROL PERANGKAT';
     document.querySelectorAll('#hackView > .termline:not(#hackHintLine)').forEach(el => {
       (el as HTMLElement).style.display = this.sim ? 'none' : '';
     });
