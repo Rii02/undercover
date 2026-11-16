@@ -5,7 +5,8 @@
  * - Atribut itu sudah dipasang lebih awal oleh skrip kecil di <head> (tema tersimpan, atau preferensi sistem kalau
  *   belum pernah memilih) supaya tidak ada kilatan warna. Modul ini hanya menyediakan tombol & menyimpan pilihan.
  * - Pilihan disimpan di localStorage. Selama pemain belum memilih sendiri, tema mengikuti perubahan pengaturan sistem.
- * - Terminal hacking sengaja tetap gelap di kedua tema (lihat komentar di index.html).
+ * - Terminal hacking juga ikut tema (variabel --term-*). Kanvasnya digambar lewat kode, jadi setiap pergantian tema
+ *   disiarkan sebagai event window 'themechange' agar HackingScene menggambar ulang dengan warna baru.
  */
 export type Theme = 'light' | 'dark';
 
@@ -41,6 +42,7 @@ export function currentTheme(): Theme {
 
 function applyTheme(theme: Theme): void {
   root.setAttribute('data-theme', theme);
+  window.dispatchEvent(new CustomEvent('themechange', { detail: theme }));
   // Warna bilah browser di HP ikut latar tema.
   const meta = document.querySelector('meta[name="theme-color"]');
   const bg = getComputedStyle(root).getPropertyValue('--bg').trim();

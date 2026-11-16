@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState, dist, dirFromDelta, Direction, TIME_INTERVAL_MS, SCORE_START } from '../state/GameState';
+import { GameState, dist, dirFromDelta, Direction, TIME_INTERVAL_MS, SCORE_START, SLOT_ICON } from '../state/GameState';
 import { NpcConfig, NpcLine, DialogueLine, AMBIENT_NPCS, CHAPTERS } from '../state/Chapters';
 import { Hud, playerSpeakerLabel } from '../state/Hud';
 import { charFrame, CHAR_SCALE_MAP, CHAR_HEIGHT_MAP } from '../state/Sprites';
@@ -124,6 +124,8 @@ export class MapScene extends Phaser.Scene {
   private debugDoors: Record<number, { x: number; y: number }> = {};
   private keys: Record<string, boolean> = {};
   private countdownTimer?: Phaser.Time.TimerEvent;
+  /** Timer pergantian slot waktu (loop tiap TIME_INTERVAL_MS). Disimpan supaya bisa di-reset saat waktu dilewati. */
+  private timeEvent?: Phaser.Time.TimerEvent;
   private resizeObserver?: ResizeObserver;
 
   // ---- state dialog NPC ----
@@ -205,19 +207,13 @@ export class MapScene extends Phaser.Scene {
     Hud.updateClock(this.state);
     Hud.renderLog(this.state);
 
-    this.time.addEvent({
-      delay: TIME_INTERVAL_MS, loop: true,
-      callback: () => {
-        this.state.advanceTime();
-        Hud.updateClock(this.state);
-        this.refreshOwnerTarget();
-      }
-    });
+    this.startTimeLoop();
     this.countdownTimer = this.time.addEvent({
       delay: 1000, loop: true, callback: () => Hud.updateClockCountdown(this.state)
     });
 
     Hud.baksoBtn.onclick = () => { const n = this.nearestNPC(); if (n) this.openDialogue(n); };
+    Hud.skipTimeBtn.onclick = () => { this.skipTime(); Hud.skipTimeBtn.blur(); };   // blur: Spasi/Enter di game tidak menekannya lagi
     Hud.enterBtn.onclick = () => this.tryEnter();
     // Tombol layar sentuh untuk F (dibuat otomatis di sebelah tombol "Coba Masuk"; tidak perlu ubah HTML).
     this.cartBtn = (document.getElementById('cartBtn') as HTMLButtonElement | null) ?? (() => {
@@ -419,6 +415,29 @@ export class MapScene extends Phaser.Scene {
     const half = 14;   // setengah lebar kaki gerobak (px dunia)
     if (this.footBlocked(p.x - half, p.y) || this.footBlocked(p.x, p.y) || this.footBlocked(p.x + half, p.y)) return false;
     return !(p.x > HOUSE.x && p.x < HOUSE.x + HOUSE.w && p.y > HOUSE.y && p.y < HOUSE.y + HOUSE.h);
+  }
+
+  /** (Re)mulai timer pergantian slot waktu dari 25 detik penuh. */
+  private startTimeLoop(): void {
+    this.timeEvent?.remove(false);
+    this.timeEvent = this.time.addEvent({ delay: TIME_INTERVAL_MS, loop: true, callback: () => this.tickTime() });
+  }
+
+  /** Maju satu slot waktu (Pagi -> Siang -> Sore -> Malam -> Pagi): dipakai timer otomatis maupun skip manual. */
+  private tickTime(): void {
+    this.state.advanceTime();
+    Hud.updateClock(this.state);
+    Hud.updateClockCountdown(this.state);
+    this.refreshOwnerTarget();
+  }
+
+  /** Lewati ke slot waktu berikutnya sekarang juga (tombol "Lewati" / tombol T), lalu ulang hitung mundur 25 detik. */
+  private skipTime(): void {
+    if (this.overlayOpen || this.storyActive || this.dialogueOpen || !this.scene.isActive()) return;
+    this.tickTime();
+    this.startTimeLoop();   // tanpa ini, timer lama bisa memajukan slot lagi beberapa detik setelah skip
+    const slot = this.state.currentSlot;
+    Hud.setToast(`⏭ Waktu dilewati: sekarang ${SLOT_ICON[slot]} ${slot}.`, '#f5a623');
   }
 
   /** Tombol F: taruh gerobak di samping avatar, atau ambil lagi kalau sudah ditaruh & avatar dekat. */
@@ -708,6 +727,8 @@ export class MapScene extends Phaser.Scene {
 
   // ---------- input ----------
   private bindInput(): void {
+    /** Jangan tangkap pintasan saat pemain sedang mengetik di kolom isian (mis. nama panggilan). */
+    const isTyping = (e: KeyboardEvent) => ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement | null)?.tagName ?? '');
     const map: Record<string, string> = {
       arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down',
       arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right'
@@ -717,6 +738,7 @@ export class MapScene extends Phaser.Scene {
       if (map[k]) this.keys[map[k]] = true;
       if (k === 'e') this.handleInteract();
       if (k === 'f' && !e.repeat) this.toggleCart();
+      if (k === 't' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !isTyping(e)) this.skipTime();   // T = lewati waktu
       if (k === 'k' && DEBUG_DOOR && !e.repeat) this.debugSetDoor();
     };
     const ku = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (map[k]) this.keys[map[k]] = false; };
@@ -726,6 +748,7 @@ export class MapScene extends Phaser.Scene {
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
       this.countdownTimer?.remove();
+      this.timeEvent?.remove();
     });
     const bindHold = (id: string, dir: string) => {
       const el = document.getElementById(id)!;

@@ -55,6 +55,10 @@ export class HackingScene extends Phaser.Scene {
   private sim = false;
   private simInputs: 2 | 3 = 3;
   private pointerHandler = (e: PointerEvent) => this.onPointerDown(e);
+  /** Warna kanvas rangkaian; dibaca dari variabel CSS tema (--term-*) tiap gambar ulang. Nilai awal = tema gelap. */
+  private pal = { text: '#3dff6a', dim: '#1e8f3e', bg: '#001208', fill: '#0d2b16', on: '#000000' };
+  /** Tema diganti (tombol tema) saat terminal terbuka -> gambar ulang kanvas dengan warna baru. */
+  private themeHandler = () => this.drawCircuit();
 
   constructor() {
     super('Hacking');
@@ -92,8 +96,12 @@ export class HackingScene extends Phaser.Scene {
     this.locked = false;
 
     this.canvas.addEventListener('pointerdown', this.pointerHandler);
+    window.addEventListener('themechange', this.themeHandler);
     // Scene bisa dihentikan paksa (tombol Menu di Story) tanpa lewat teardown() -> pastikan listener lepas.
-    this.events.once('shutdown', () => this.canvas.removeEventListener('pointerdown', this.pointerHandler));
+    this.events.once('shutdown', () => {
+      this.canvas.removeEventListener('pointerdown', this.pointerHandler);
+      window.removeEventListener('themechange', this.themeHandler);
+    });
     (document.getElementById('checkBtn') as HTMLButtonElement).onclick = () => this.checkAnswer();
     (document.getElementById('cancelBtn') as HTMLButtonElement).onclick = () => this.cancelHacking();
     (document.getElementById('backBtn') as HTMLButtonElement).onclick = () => this.backToMap();
@@ -276,17 +284,28 @@ export class HackingScene extends Phaser.Scene {
 
   private drawWire(x1: number, y1: number, x2: number, y2: number, on: boolean): void {
     const c = this.ctx;
-    c.strokeStyle = on ? '#3dff6a' : '#1e8f3e'; c.lineWidth = on ? 3 : 2;
+    c.strokeStyle = on ? this.pal.text : this.pal.dim; c.lineWidth = on ? 3 : 2;
     c.beginPath(); c.moveTo(x1, y1); c.lineTo((x1 + x2) / 2, y1); c.lineTo((x1 + x2) / 2, y2); c.lineTo(x2, y2); c.stroke();
   }
   private drawPort(p: { x: number; y: number }, isOut: boolean): void {
     const c = this.ctx;
     c.beginPath(); c.arc(p.x, p.y, 7, 0, Math.PI * 2);
-    c.fillStyle = isOut ? '#3dff6a' : '#001208'; c.fill();
-    c.strokeStyle = '#1e8f3e'; c.lineWidth = 2; c.stroke();
+    c.fillStyle = isOut ? this.pal.text : this.pal.bg; c.fill();
+    c.strokeStyle = this.pal.dim; c.lineWidth = 2; c.stroke();
+  }
+
+  /** Baca warna tema aktif dari variabel CSS (--term-*) ke this.pal. */
+  private readPalette(): void {
+    const cs = getComputedStyle(document.documentElement);
+    const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+    this.pal = {
+      text: v('--term-text', '#3dff6a'), dim: v('--term-dim', '#1e8f3e'), bg: v('--term-bg', '#001208'),
+      fill: v('--term-fill', '#0d2b16'), on: v('--term-on', '#000000')
+    };
   }
 
   private drawCircuit(): void {
+    this.readPalette();
     const c = this.ctx, P = this.ports();
     c.setTransform(RES, 0, 0, RES, 0, 0);
     c.clearRect(0, 0, CANVAS_W, CANVAS_H);
@@ -296,33 +315,33 @@ export class HackingScene extends Phaser.Scene {
     });
     if (this.selectedSource && P[this.selectedSource]) {
       const s = P[this.selectedSource];
-      c.strokeStyle = '#3dff6a'; c.setLineDash([5, 4]); c.lineWidth = 2;
+      c.strokeStyle = this.pal.text; c.setLineDash([5, 4]); c.lineWidth = 2;
       c.beginPath(); c.moveTo(s.x, s.y); c.lineTo(s.x + 20, s.y - 20); c.stroke(); c.setLineDash([]);
     }
     this.inputValues.forEach((val, i) => {
       const pt = P[INPUT_NAMES[i] + '_out'];
-      c.fillStyle = val ? '#3dff6a' : '#0d2b16';
+      c.fillStyle = val ? this.pal.text : this.pal.fill;
       c.beginPath(); c.arc(pt.x - 20, pt.y, 18, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = '#1e8f3e'; c.lineWidth = 2; c.stroke();
-      c.fillStyle = val ? '#000' : '#3dff6a'; c.font = '11px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.strokeStyle = this.pal.dim; c.lineWidth = 2; c.stroke();
+      c.fillStyle = val ? this.pal.on : this.pal.text; c.font = '11px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
       c.fillText(INPUT_NAMES[i] + ':' + val, pt.x - 20, pt.y);
       this.drawPort(pt, true);
     });
     SLOT_BOX.forEach((b, idx) => {
       const type = this.gatesSlots[idx];
-      c.fillStyle = type ? '#0d2b16' : '#001208'; c.strokeStyle = '#1e8f3e'; c.lineWidth = 2;
+      c.fillStyle = type ? this.pal.fill : this.pal.bg; c.strokeStyle = this.pal.dim; c.lineWidth = 2;
       c.fillRect(b.x, b.y, b.w, b.h); c.strokeRect(b.x, b.y, b.w, b.h);
-      c.fillStyle = '#3dff6a'; c.font = '13px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillStyle = this.pal.text; c.font = '13px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
       c.fillText(type || '[ ]', b.x + b.w / 2 + 8, b.y + b.h / 2);
       this.drawPort(P['G' + idx + '_in1'], false);
       if (P['G' + idx + '_in2']) this.drawPort(P['G' + idx + '_in2'], false);
       this.drawPort(P['G' + idx + '_out'], true);
     });
     const lv = this.lampValue();
-    c.fillStyle = lv ? '#3dff6a' : '#0d2b16';
+    c.fillStyle = lv ? this.pal.text : this.pal.fill;
     c.beginPath(); c.arc(P.Lamp_in.x + 20, P.Lamp_in.y, 22, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = '#1e8f3e'; c.lineWidth = 2; c.stroke();
-    c.fillStyle = lv ? '#000' : '#3dff6a'; c.font = '10px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.strokeStyle = this.pal.dim; c.lineWidth = 2; c.stroke();
+    c.fillStyle = lv ? this.pal.on : this.pal.text; c.font = '10px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
     const [lampOff, lampOn] = this.step.puzzle.lampText ?? ['LOCK', 'OPEN'];
     c.fillText(lv ? lampOn : lampOff, P.Lamp_in.x + 20, P.Lamp_in.y);
     this.drawPort(P.Lamp_in, false);
@@ -372,7 +391,7 @@ export class HackingScene extends Phaser.Scene {
       this.inputValues = k.split('').map(Number);
       const y = this.lampValue();
       const cur = k === saved.join('');
-      html += `<tr${cur ? ' style="background:#0d2b16;font-weight:700"' : ''}>` + k.split('').map(b => `<td>${b}</td>`).join('') + `<td>${y ? '🟢' : '⬛'}</td></tr>`;
+      html += `<tr${cur ? ' style="background:var(--term-fill);font-weight:700"' : ''}>` + k.split('').map(b => `<td>${b}</td>`).join('') + `<td>${y ? '🟢' : '⬛'}</td></tr>`;
     }
     this.inputValues = saved;
     document.getElementById('targetTable')!.innerHTML = html;
@@ -408,11 +427,11 @@ export class HackingScene extends Phaser.Scene {
         this.updateScoreLine();
       }
       status.innerHTML = '❌ ' + esc(this.state.chapter.hackFailText) + scoreNote;
-      status.style.color = '#ff6b6b';
+      status.style.color = 'var(--term-err)';
       return;
     }
 
-    status.style.color = '#3dff6a';
+    status.style.color = 'var(--term-text)';
     if (this.stepIdx < this.steps.length - 1) {
       // Masih ada puzzle berikutnya di level ini (mis. level 1: AND lalu OR; level 5: XOR, NAND, NOR).
       status.innerHTML = `✅ Benar! Lanjut ke soal berikutnya...`;
@@ -497,6 +516,7 @@ export class HackingScene extends Phaser.Scene {
 
   private teardown(): void {
     this.canvas.removeEventListener('pointerdown', this.pointerHandler);
+    window.removeEventListener('themechange', this.themeHandler);
     document.getElementById('hackView')!.style.display = 'none';
   }
 

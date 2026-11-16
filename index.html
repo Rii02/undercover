@@ -22,12 +22,14 @@
   /* ==== Tema ====
      Gelap = bawaan di :root. Terang = :root[data-theme="light"]. Atribut data-theme dipasang oleh skrip kecil di <head>
      (tema tersimpan atau preferensi sistem) dan diganti oleh tombol tema (src/ui/ThemeToggle.ts).
-     Terminal hacking (--term-*) sengaja tetap gelap di kedua tema, seperti layar komputer di dalam game. */
+     Terminal hacking memakai variabel --term-*: gelap = hijau di atas hitam; terang = hijau tua di atas latar terang.
+     HackingScene membaca variabel ini juga untuk menggambar kanvas rangkaian (lihat readPalette). */
   :root{
     color-scheme:dark;
     --bg:#0a0e1a; --panel:#161d2e; --accent:#f5a623; --on:#ffd93d; --off:#3d4759;
     --wire:#5b6b7f; --wireOn:#ffd93d; --text:#eef2f7; --good:#00d9a3; --bad:#ff6b6b;
     --term-bg:#001208; --term-text:#3dff6a; --term-dim:#1e8f3e;
+    --term-canvas:#000d05; --term-surface:#00220f; --term-fill:#0d2b16; --term-on:#000000; --term-err:#ff6b6b;
     /* varian untuk TEKS berwarna (kontras cukup di atas --bg/--panel) */
     --accent-text:#f5a623; --good-text:#00d9a3; --bad-text:#ff6b6b; --warn-text:#ff9f43;
     --scrim:rgba(5,8,16,.92); --shadow-lg:rgba(0,0,0,.6);
@@ -40,6 +42,8 @@
   :root[data-theme="light"]{
     color-scheme:light;
     --bg:#eef0fb; --panel:#ffffff; --accent:#f5a623; --on:#ffd93d; --off:#c7c9de;
+    --term-bg:#f2f9f4; --term-text:#0a5c28; --term-dim:#5fa77b;
+    --term-canvas:#ffffff; --term-surface:#e1f3e7; --term-fill:#d3ebdb; --term-on:#ffffff; --term-err:#c0322c;
     --wire:#9aa4b5; --wireOn:#e8a900; --text:#22243a; --good:#00b389; --bad:#e0433d;
     --accent-text:#9a5b00; --good-text:#007a5e; --bad-text:#c0322c; --warn-text:#a65300;
     --scrim:rgba(238,240,251,.94); --shadow-lg:rgba(30,34,70,.28);
@@ -97,6 +101,13 @@
   #dialogName{font-weight:700; font-size:clamp(1rem, 1.6vw + 1vh, 1.5rem); color:var(--accent-text); margin-bottom:6px}
   #dialogText{font-size:clamp(1rem, 1.5vw + 1vh, 1.45rem); line-height:1.5; min-height:4.5em; max-height:45vh; overflow-y:auto; margin-bottom:10px; cursor:pointer}
   #dialogCtaBtn{display:none; width:100%; border:none; border-radius:8px; padding:14px 6px; font-weight:700; font-size:clamp(.95rem, 1.2vw + 1vh, 1.3rem); cursor:pointer; background:var(--good); color:#08251c}
+  /* Tabel kebenaran mini di halaman Materi (dialog cerita) */
+  .dlgTable{border-collapse:collapse; margin:.4em 0 0; font-size:.9em}
+  .dlgTable th,.dlgTable td{border:1px solid var(--wire); padding:.04em .85em; text-align:center; line-height:1.25}
+  .dlgTable th{background:var(--off); font-weight:700}
+  .dlgTable td.y1{color:var(--good-text); font-weight:700}
+  .dlgTable td.y0{opacity:.7}
+  #dialogText:has(.dlgTable){max-height:62vh}   /* halaman materi bertabel butuh ruang lebih agar tabel tidak perlu digulir */
   #dialogHint{display:none; font-size:clamp(.8rem, .9vw + .8vh, 1.05rem); opacity:.7; text-align:right; cursor:pointer; padding:4px 0}
 
   /* ==== Tombol info bulat (pojok kanan atas kanvas) + popup catatan pengamatan ==== */
@@ -191,15 +202,20 @@
   #hackView{display:none; background:var(--term-bg); border:2px solid var(--term-dim); border-radius:10px; padding:12px; color:var(--term-text); font-family:'Courier New',monospace}
   #hackView h2{margin:0 0 6px; font-size:.95rem}
   .termline{font-size:.75rem; opacity:.85; margin:2px 0}
-  #circuit{background:#000d05; border:1px solid var(--term-dim); border-radius:6px; image-rendering:pixelated; max-width:100%; display:block; margin:0 auto}
+  #circuit{background:var(--term-canvas); border:1px solid var(--term-dim); border-radius:6px; image-rendering:pixelated; max-width:100%; display:block; margin:0 auto}
   .palette{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:8px}
-  .gate-chip{border:2px solid var(--term-text); border-radius:6px; padding:6px 12px; cursor:grab; font-weight:700; font-size:.8rem; background:#00220f; color:var(--term-text); user-select:none; touch-action:none; font-family:'Courier New',monospace}
-  .ghost{position:fixed; z-index:999; pointer-events:none; padding:6px 12px; border-radius:6px; background:#00220f; color:var(--term-text); border:2px solid var(--term-text); font-weight:700; font-size:.8rem; font-family:'Courier New',monospace}
+  .gate-chip{border:2px solid var(--term-text); border-radius:6px; padding:6px 12px; cursor:grab; font-weight:700; font-size:.8rem; background:var(--term-surface); color:var(--term-text); user-select:none; touch-action:none; font-family:'Courier New',monospace}
+  .ghost{position:fixed; z-index:999; pointer-events:none; padding:6px 12px; border-radius:6px; background:var(--term-surface); color:var(--term-text); border:2px solid var(--term-text); font-weight:700; font-size:.8rem; font-family:'Courier New',monospace}
   table.tt{border-collapse:collapse; font-size:.72rem; margin-top:4px}
   table.tt td, table.tt th{border:1px solid var(--term-dim); padding:3px 8px; text-align:center; color:var(--term-text)}
   .controls2{display:flex; gap:8px; margin-top:10px}
-  .ctrl-btn2{flex:1; border:2px solid var(--term-text); border-radius:6px; padding:9px; cursor:pointer; font-weight:700; font-size:.8rem; background:#00220f; color:var(--term-text); font-family:'Courier New',monospace}
-  .hackNote{opacity:.7; font-size:.88em}
+  .ctrl-btn2{flex:1; border:2px solid var(--term-text); border-radius:6px; padding:9px; cursor:pointer; font-weight:700; font-size:.8rem; background:var(--term-surface); color:var(--term-text); font-family:'Courier New',monospace}
+  .hackNote{opacity:.85; font-size:.88em}
+  /* Tombol skip waktu (HUD jam): ringkas supaya tinggi baris statistik tidak berubah; area sentuh diperluas lewat ::after */
+  .skipTimeBtn{position:relative; margin-left:.4em; padding:0 .6em; border:1px solid var(--accent); border-radius:999px; background:transparent;
+    color:var(--accent-text); font:inherit; font-size:max(.7rem,.6em); font-weight:700; line-height:1.15; cursor:pointer; vertical-align:middle}
+  .skipTimeBtn::after{content:''; position:absolute; inset:-9px -5px}
+  .skipTimeBtn:hover,.skipTimeBtn:focus-visible{background:var(--accent); color:#2a1900; outline:none}
   #hackStatus{min-height:1.3em; font-weight:700; text-align:center; font-size:.8rem; margin-top:8px}
   #hackBody{display:flex; flex-direction:column; gap:8px}
 
@@ -289,7 +305,7 @@
   <!-- ===== MAP VIEW ===== -->
   <div class="panel" id="mapView">
     <div class="statrow">
-      <span><span id="clockIcon">🌅</span> <span id="clockLabel">Pagi</span> <small id="clockCountdown" style="opacity:.6">(ganti dlm 25s)</small></span>
+      <span><span id="clockIcon">🌅</span> <span id="clockLabel">Pagi</span> <small id="clockCountdown" style="opacity:.6">(ganti dlm 25s)</small> <button id="skipTimeBtn" class="skipTimeBtn" type="button" title="Lewati ke waktu berikutnya (T)" aria-label="Lewati ke waktu berikutnya">⏭ Lewati</button></span>
       <span>😰 Kecurigaan</span>
     </div>
     <div id="susWrap"><div id="susBar"></div></div>

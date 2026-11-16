@@ -1,5 +1,5 @@
 import { GameState, SLOT_ICON, SLOTS, DEFAULT_PLAYER_NAME } from './GameState';
-import { ChapterConfig, DialogueLine } from './Chapters';
+import { ChapterConfig, DialogueLine, TruthTable } from './Chapters';
 import { charFrame, CHAR_COLS, CHAR_ROWS, CHAR_W, CHAR_SHEET_URL } from './Sprites';
 
 /** Nama panggilan pemain yang tampil sebagai label pembicara. Diisi MapScene lewat Hud.setPlayerName(). */
@@ -15,7 +15,7 @@ const TOAST_COLOR_VAR: Record<string, string> = {
 export const playerSpeakerLabel = (): string => `🧑 ${playerName}`;
 
 const STORY_SPEAKER: Record<Exclude<DialogueLine['speaker'], 'Aku'>, string> = {
-  Bos: '📞 Bos', Narasi: '📖 Narasi'
+  Bos: '📞 Bos', Narasi: '📖 Narasi', Materi: '📘 Materi'
 };
 
 // ---- Potret karakter di samping dialog: MC SELALU di kiri (menghadap kanan), lawan bicara di kanan (menghadap kiri). ----
@@ -91,12 +91,32 @@ function showPortraits(otherKey: string, speaker: 'me' | 'other' | null): void {
   paintPortrait(portraitR!, otherKey, 'left', speaker === 'other', px);
 }
 
+/** Tambahkan tabel kebenaran mini ke kotak dialog (dibuat lewat DOM + textContent, jadi aman dari HTML). */
+function renderTruthTable(host: HTMLElement, t: TruthTable): void {
+  const tbl = document.createElement('table');
+  tbl.className = 'dlgTable';
+  tbl.setAttribute('aria-label', 'Tabel kebenaran');
+  const hr = tbl.createTHead().insertRow();
+  [...t.inputs, 'Y'].forEach(h => { const th = document.createElement('th'); th.textContent = h; hr.appendChild(th); });
+  const body = tbl.createTBody();
+  t.rows.forEach(r => {
+    const tr = body.insertRow();
+    r.forEach((v, i) => {
+      const td = tr.insertCell();
+      td.textContent = String(v);
+      if (i === r.length - 1) td.className = v ? 'y1' : 'y0';   // kolom keluaran Y disorot
+    });
+  });
+  host.appendChild(tbl);
+}
+
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 export const Hud = {
   clockLabel: $('clockLabel'),
   clockIcon: $('clockIcon'),
   clockCountdown: $('clockCountdown'),
+  skipTimeBtn: $<HTMLButtonElement>('skipTimeBtn'),
   susBar: $<HTMLDivElement>('susBar'),
   toast: $('toast'),
   logTable: $<HTMLTableElement>('logTable'),
@@ -166,9 +186,10 @@ export const Hud = {
    *  ngobrol langsung dgn Bos di telepon. Baris terakhir menukar hint "lanjut" jadi tombol aksi
    *  besar (mis. "▶ Mulai Misi") lewat ctaLabel. */
   showStoryLine(line: DialogueLine, isLast: boolean, ctaLabel: string): void {
-    showPortraits(PORTRAIT_KEY_BOSS, line.speaker === 'Aku' ? 'me' : line.speaker === 'Bos' ? 'other' : null);
+    showPortraits(PORTRAIT_KEY_BOSS, line.speaker === 'Aku' ? 'me' : line.speaker === 'Bos' ? 'other' : null);   // Narasi/Materi: kedua potret redup
     this.dialogName.textContent = line.speaker === 'Aku' ? playerSpeakerLabel() : STORY_SPEAKER[line.speaker];
     this.dialogText.textContent = line.text;
+    if (line.table) renderTruthTable(this.dialogText, line.table);   // halaman materi: tabel kebenaran di bawah teks
     if (isLast) {
       this.dialogHint.style.display = 'none';
       this.dialogCtaBtn.style.display = 'block';

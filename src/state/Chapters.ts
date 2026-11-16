@@ -17,10 +17,19 @@ export interface NpcConfig {
   conversation: NpcLine[];
 }
 
-/** Satu baris cerita. 'Narasi' = teks narator (pembukaan, cliffhanger). */
+/** Tabel kebenaran mini untuk halaman materi. Tiap baris = nilai semua masukan lalu keluaran Y di kolom terakhir. */
+export interface TruthTable {
+  /** Nama kolom masukan (mis. ['A', 'B']); kolom keluaran 'Y' ditambahkan otomatis. */
+  inputs: string[];
+  rows: number[][];
+}
+
+/** Satu baris cerita. 'Narasi' = teks narator (pembukaan, cliffhanger). 'Materi' = halaman materi gerbang logika. */
 export interface DialogueLine {
-  speaker: 'Bos' | 'Aku' | 'Narasi';
+  speaker: 'Bos' | 'Aku' | 'Narasi' | 'Materi';
   text: string;
+  /** Opsional (untuk 'Materi'): tabel kebenaran yang ditampilkan di bawah teks. */
+  table?: TruthTable;
 }
 
 /** Satu file bukti yang ditemukan setelah hacking berhasil. */
@@ -138,6 +147,16 @@ export interface ChapterConfig {
 const bos = (text: string): DialogueLine => ({ speaker: 'Bos', text });
 const aku = (text: string): DialogueLine => ({ speaker: 'Aku', text });
 const narasi = (text: string): DialogueLine => ({ speaker: 'Narasi', text });
+const materi = (text: string, table?: TruthTable): DialogueLine => ({ speaker: 'Materi', text, ...(table ? { table } : {}) });
+
+/** Bangun tabel kebenaran dari fungsi gerbang (urutan biner: 00, 01, 10, 11, ...), jadi isinya pasti konsisten dengan persamaannya. */
+const tt = (inputs: string[], fn: (...v: number[]) => number): TruthTable => ({
+  inputs,
+  rows: Array.from({ length: 2 ** inputs.length }, (_, i) => {
+    const v = inputs.map((_n, k) => (i >> (inputs.length - 1 - k)) & 1);
+    return [...v, fn(...v)];
+  })
+});
 const me = (text: string): NpcLine => ({ who: 'Aku', text });
 const them = (text: string): NpcLine => ({ who: 'NPC', text });
 
@@ -151,7 +170,12 @@ export const CHAPTERS: ChapterConfig[] = [
       narasi('Pagi di desa. Gerobak bakso sudah siap, panci mengepul. Telepon dari Bos masuk.'),
       bos('Bank melaporkan empat belas transfer kecil dalam sebulan. Nominalnya sengaja dibuat receh supaya tidak kelihatan.'),
       aku('Semuanya dari satu rekening?'),
-      bos('Atas nama Herman. Rumahnya di ujung jalan. Tapi belum tentu dia pelakunya. Amati dulu, jangan buru-buru.')
+      bos('Atas nama Herman. Rumahnya di ujung jalan. Tapi belum tentu dia pelakunya. Amati dulu, jangan buru-buru.'),
+      // ---- Materi Chapter 1: AND dan OR ----
+      bos('Sebelum berangkat, kilas materi dulu. Panel proteksi di perangkat target dibangun dari gerbang logika, yaitu rangkaian digital yang mengolah sinyal 0 (mati) dan 1 (aktif).'),
+      materi('Gerbang AND: keluaran 1 hanya jika KEDUA masukan bernilai 1. Persamaan: Y = A AND B. Contoh: autentikasi dua faktor, akses terbuka hanya jika sandi benar DAN token perangkat aktif.', tt(['A', 'B'], (a, b) => a & b)),
+      materi('Gerbang OR: keluaran 1 jika SALAH SATU atau kedua masukan bernilai 1. Persamaan: Y = A OR B. Contoh: indikator koneksi, lampu ONLINE menyala jika kabel LAN ATAU Wi-Fi aktif.', tt(['A', 'B'], (a, b) => a | b)),
+      bos('Di rumah target, kamu akan menyusun ulang rangkaian logika modul proteksinya sesuai tabel. Ingat: ini simulasi untuk belajar, bukan cara kerja sistem keamanan yang sesungguhnya.')
     ],
     suspectName: 'Pak Herman',
     houseRoof: 0x4a2a2a,
@@ -243,7 +267,12 @@ export const CHAPTERS: ChapterConfig[] = [
       narasi('Hujan tipis sejak subuh. Bos menelepon lagi.'),
       bos('Dompet digital atas nama Melati S. baru dibuka dua bulan lalu. Tiap uang masuk, langsung ditarik tunai di tempat berbeda.'),
       aku('Dia tinggal di desa ini?'),
-      bos('Rumahnya dua gang dari rumah Herman. Hati-hati, dia orang IT. Dulu admin sistem.')
+      bos('Rumahnya dua gang dari rumah Herman. Hati-hati, dia orang IT. Dulu admin sistem.'),
+      // ---- Materi Chapter 2: NOT ----
+      bos('Kilas materi sebelum masuk. Kali ini gerbang yang paling sederhana.'),
+      materi('Gerbang NOT (pembalik): hanya satu masukan, keluarannya selalu kebalikannya. Persamaan: Y = NOT A. Contoh: sensor pengawas jaringan bernilai 1 saat jaringan dipantau, sedangkan lampu AMAN butuh sinyal kebalikannya, jadi dipasang NOT.', tt(['A'], a => 1 - a)),
+      materi('NOT hanya membalik polaritas sinyal, 0 menjadi 1 dan 1 menjadi 0. Ia tidak membuka isi pesan apa pun; di sini ia murni mengubah sinyal sensor menjadi sinyal indikator.'),
+      bos('Cocokkan pola tabel pada panel di rumah Melati, lalu susun rangkaian pembaliknya.')
     ],
     suspectName: 'Mbak Melati',
     houseRoof: 0x2a3a6a,
@@ -324,7 +353,12 @@ export const CHAPTERS: ChapterConfig[] = [
       narasi('Alamat ke-11 di daftar paket Melati adalah rumah di pinggir sawah, milik seorang pria yang jarang bergaul. Bos mengirim catatan singkat.'),
       bos('Namanya Arman. Dulu teknisi koperasi yang bangkrut. Sekarang ngakunya penghobi radio.'),
       aku('Penghobi radio butuh rak besi?'),
-      bos('Itu yang mau kita cari tahu.')
+      bos('Itu yang mau kita cari tahu.'),
+      // ---- Materi Chapter 3: kombinasi 2 gerbang ----
+      bos('Kilas materi sebelum masuk. Panel di tempat ini lebih rumit: gerbangnya digabung.'),
+      materi('Menggabungkan gerbang: keluaran satu gerbang bisa menjadi masukan gerbang lain. Caranya: tulis syarat dengan kata “dan / atau / tidak”, ubah tiap kata menjadi gerbang AND / OR / NOT, lalu sambungkan dari masukan sampai keluaran.'),
+      materi('Contoh: lampu darurat gedung menyala jika listrik utama TIDAK aktif DAN baterai cadangan terisi. Persamaan: Y = (NOT A) AND B. NOT membalik A lebih dulu, lalu AND menggabungkannya dengan B.', tt(['A', 'B'], (a, b) => (1 - a) & b)),
+      bos('Baca tabel target pada panel kabinet, rumuskan syaratnya dengan kata-kata, lalu terjemahkan menjadi gerbang.')
     ],
     suspectName: 'Pak Arman',
     houseRoof: 0x2a5a3a,
@@ -402,7 +436,13 @@ export const CHAPTERS: ChapterConfig[] = [
       aku('Rumah hantu?'),
       bos('Rumah hantu yang listriknya paling boros di gang itu.'),
       aku('Ada yang jaga?'),
-      bos('Tidak ada orang. Tapi ada kamera yang terus berputar. Pelajari pola putarnya, jangan jalan di depan lensanya.')
+      bos('Tidak ada orang. Tapi ada kamera yang terus berputar. Pelajari pola putarnya, jangan jalan di depan lensanya.'),
+      // ---- Materi Chapter 4: kombinasi 3 gerbang ----
+      bos('Kilas materi sebelum masuk. Sekarang tiga masukan sekaligus.'),
+      materi('Tiga masukan berarti 2 x 2 x 2 = 8 kombinasi pada tabel kebenaran. Hitung dari dalam: selesaikan gerbang di dalam kurung lebih dulu, lalu gabungkan hasilnya dengan gerbang berikutnya.'),
+      materi('Contoh: pagar otomatis terbuka jika (remote valid DAN jalur aman) ATAU tombol manual ditekan. Persamaan: Y = (A AND B) OR C. Bagian dalam kurung dihitung lebih dulu, lalu OR menambahkan C.', tt(['A', 'B', 'C'], (a, b, c) => (a & b) | c)),
+      materi('Sinyal aktif-rendah (aktif saat bernilai 0, misalnya kontak normally-closed) harus dibalik dengan NOT agar terbaca sebagai “aktif” oleh gerbang di belakangnya.'),
+      bos('Panel kontrol akses ruang server memakai pola serupa. Pelajari tabelnya baik-baik.')
     ],
     suspectName: 'Penghuni Tanpa Nama',
     houseRoof: 0x6a2a4a,
@@ -485,7 +525,13 @@ export const CHAPTERS: ChapterConfig[] = [
       aku('Bagaimana kalau dia sudah tahu?'),
       bos('Kalau sudah, dia lagi menunggu kamu.'),
       aku('Ada yang menjaganya?'),
-      bos('Dua bodyguard bayaran, bergantian keliling. Jangan melawan. Kalau kepergok, lari dan hilang dari pandangan mereka.')
+      bos('Dua bodyguard bayaran, bergantian keliling. Jangan melawan. Kalau kepergok, lari dan hilang dari pandangan mereka.'),
+      // ---- Materi Chapter 5: XOR, NAND, NOR ----
+      bos('Kilas materi sebelum masuk. Ada tiga gerbang turunan.'),
+      materi('Gerbang XOR: keluaran 1 jika TEPAT SATU masukan bernilai 1 (kedua masukan berbeda). Persamaan: Y = A XOR B. Contoh: pengunci sesi bergilir, terlepas hanya jika tepat satu operator sedang login.', tt(['A', 'B'], (a, b) => a ^ b)),
+      materi('Gerbang NAND adalah kebalikan AND: keluaran 0 hanya jika kedua masukan 1. Persamaan: Y = A NAND B = NOT (A AND B). Contoh: lampu NORMAL menyala kecuali sensor jendela dan sensor pintu terpicu bersamaan.', tt(['A', 'B'], (a, b) => 1 - (a & b))),
+      materi('Gerbang NOR adalah kebalikan OR: keluaran 1 hanya jika kedua masukan 0. Persamaan: Y = A NOR B = NOT (A OR B). Contoh: lampu PUTUS menyala jika kabel LAN dan Wi-Fi sama-sama mati.', tt(['A', 'B'], (a, b) => 1 - (a | b))),
+      bos('NAND dan NOR disebut gerbang universal: rangkaian apa pun bisa dibuat hanya dari salah satunya. Hafalkan pola tabelnya, tiga panel sedang menunggumu.')
     ],
     suspectName: 'Operator 07',
     houseRoof: 0x6a5a2a,
@@ -583,7 +629,12 @@ export const CHAPTERS: ChapterConfig[] = [
       aku('Kalau gagal?'),
       bos('Jangan gagal.'),
       aku('Penjagaannya?'),
-      bos('Kamera di setiap lorong, ditambah dua penjaga. Kalau kamera menangkapmu, alarm langsung memanggil penjaga. Jangan sampai terlihat.')
+      bos('Kamera di setiap lorong, ditambah dua penjaga. Kalau kamera menangkapmu, alarm langsung memanggil penjaga. Jangan sampai terlihat.'),
+      // ---- Materi Chapter 6: multiplexer 2:1 ----
+      bos('Kilas materi terakhir sebelum misi.'),
+      materi('Multiplexer 2:1 memilih satu dari dua jalur sinyal. A = selektor, B = jalur utama, C = jalur cadangan, Y = sinyal yang terpilih. Persamaan: Y = (A AND B) OR ((NOT A) AND C).'),
+      materi('Jika A = 1, Y mengikuti B (jalur utama); jika A = 0, Y mengikuti C (jalur cadangan). Pusat kendali memakainya untuk berpindah antara jalur utama dan cadangan.', tt(['A', 'B', 'C'], (a, b, c) => (a & b) | ((1 - a) & c))),
+      bos('Multiplexer hanyalah pemilih jalur sinyal, bukan alat untuk menembus sistem. Ini ujian terakhirmu: pahami polanya, lalu susun rangkaiannya.')
     ],
     suspectName: 'Penjaga Gudang',
     houseRoof: 0x3a3a3a,
