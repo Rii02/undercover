@@ -2,12 +2,14 @@ import Phaser from 'phaser';
 import { GameState, SCORE_START, SCORE_PENALTY } from '../state/GameState';
 import { Hud } from '../state/Hud';
 import { HACK_LEVELS, GATE_INFO, GateType, HackLevel, HackPuzzle } from '../state/HackLevels';
+import { GATE_SHAPES, drawGateShape, gateSvg } from '../ui/GateShapes';
 
 const GATES: Record<GateType, (a: number, b: number) => number> = {
   AND: (a, b) => (a && b ? 1 : 0),
   OR: (a, b) => (a || b ? 1 : 0),
   NOT: a => (a ? 0 : 1),
   XOR: (a, b) => (a !== b ? 1 : 0),
+  XNOR: (a, b) => (a === b ? 1 : 0),
   NAND: (a, b) => (a && b ? 0 : 1),
   NOR: (a, b) => (a || b ? 0 : 1)
 };
@@ -20,11 +22,13 @@ const CANVAS_W = 360, CANVAS_H = 400;
 /** Resolusi internal kanvas = RES x ukuran logika, supaya tetap tajam saat ditampilkan besar di desktop. Semua koordinat tetap dalam satuan logika 360x400. */
 const RES = 3;
 const SLOT_COUNT = 4; // level 6 butuh sampai 4 gerbang
-const SLOT_BOX = Array.from({ length: SLOT_COUNT }, (_, i) => ({ x: 110, y: 20 + i * 100, w: 80, h: 60 }));
+const SLOT_BOX = Array.from({ length: SLOT_COUNT }, (_, i) => ({ x: 110, y: 20 + i * 100, w: 90, h: 60 }));
+/** Simbol gerbang (viewBox 100x60, lihat ui/GateShapes.ts) digambar dengan skala ini; DY memusatkannya secara vertikal di kotak slot. */
+const GATE_SCALE = 0.9, GATE_DY = 3;
 const LAMP = { x: 300, y: 200 };
 
 /** Mode Simulasi: sandbox tanpa target/soal — semua gerbang tersedia, tabel kebenaran dihitung live dari rangkaian pemain. */
-const ALL_GATES: GateType[] = ['AND', 'OR', 'NOT', 'XOR', 'NAND', 'NOR'];
+const ALL_GATES: GateType[] = ['AND', 'OR', 'NOT', 'XOR', 'XNOR', 'NAND', 'NOR'];
 const SIM_LEVEL: HackLevel = { level: 0, title: 'Simulasi', description: 'Mode bebas', inputs: 3, gates: ALL_GATES, puzzles: [] };
 const SIM_PUZZLE: HackPuzzle = { label: 'Bebas', minGates: 0, target: {}, lampText: ['Y=0', 'Y=1'] };
 
@@ -136,9 +140,12 @@ export class HackingScene extends Phaser.Scene {
     const ys = this.inputYs();
     this.inputValues.forEach((_, i) => { P[INPUT_NAMES[i] + '_out'] = { x: 55, y: ys[i], type: 'out' }; });
     SLOT_BOX.forEach((b, i) => {
-      P[`G${i}_in1`] = { x: b.x + 30, y: b.y + 15, type: 'in' };
-      if (this.gatesSlots[i] !== 'NOT') P[`G${i}_in2`] = { x: b.x + 30, y: b.y + 45, type: 'in' };
-      P[`G${i}_out`] = { x: b.x + b.w + 10, y: b.y + b.h / 2, type: 'out' };
+      // Titik sambung = ujung kawat simbol gerbang. Slot kosong memakai posisi 2 masukan (seperti AND).
+      const shape = GATE_SHAPES[this.gatesSlots[i] ?? 'AND'];
+      const oy = b.y + GATE_DY;
+      P[`G${i}_in1`] = { x: b.x, y: oy + shape.inputs[0].y * GATE_SCALE, type: 'in' };
+      if (this.gatesSlots[i] !== 'NOT') P[`G${i}_in2`] = { x: b.x, y: oy + shape.inputs[1].y * GATE_SCALE, type: 'in' };
+      P[`G${i}_out`] = { x: b.x + b.w, y: oy + 30 * GATE_SCALE, type: 'out' };
     });
     P.Lamp_in = { x: LAMP.x, y: LAMP.y, type: 'in' };
     return P;
@@ -167,7 +174,8 @@ export class HackingScene extends Phaser.Scene {
     el.innerHTML = '';
     this.step.level.gates.forEach(name => {
       const chip = document.createElement('div');
-      chip.className = 'gate-chip'; chip.textContent = name;
+      chip.className = 'gate-chip';
+      chip.innerHTML = gateSvg(name, { fill: 'var(--term-fill)', bubbleFill: 'var(--term-surface)', className: 'gate-ico' }) + `<span>${name}</span>`;
       chip.title = `${name}: ${GATE_INFO[name]}`;   // fungsi gerbang sbg tooltip
       chip.addEventListener('pointerdown', e => this.startDrag(e, name));
       el.appendChild(chip);
@@ -220,10 +228,10 @@ export class HackingScene extends Phaser.Scene {
     if (this.locked) return;
     this.ghostEl = document.createElement('div');
     this.ghostEl.className = 'ghost';
-    this.ghostEl.textContent = type;
+    this.ghostEl.innerHTML = gateSvg(type, { fill: 'var(--term-fill)', bubbleFill: 'var(--term-surface)', className: 'gate-ico' }) + `<span>${type}</span>`;
     document.body.appendChild(this.ghostEl);
     const move = (ev: PointerEvent) => {
-      if (this.ghostEl) { this.ghostEl.style.left = ev.clientX - 20 + 'px'; this.ghostEl.style.top = ev.clientY - 16 + 'px'; }
+      if (this.ghostEl) { this.ghostEl.style.left = ev.clientX - this.ghostEl.offsetWidth / 2 + 'px'; this.ghostEl.style.top = ev.clientY - this.ghostEl.offsetHeight / 2 + 'px'; }   // ghost terpusat di bawah penunjuk
     };
     move(e);
     const up = (ev: PointerEvent) => {
@@ -282,11 +290,33 @@ export class HackingScene extends Phaser.Scene {
     }
   }
 
-  private drawWire(x1: number, y1: number, x2: number, y2: number, on: boolean): void {
+  /**
+   * Gambar kabel berpola siku, dengan lajur tegak yang tidak saling menumpuk:
+   *  - dari probe ke depan: garis tegak di lajur milik probe itu (A/B/C masing-masing satu lajur);
+   *  - dari keluaran gerbang ke lampu: satu garis tegak di tengah;
+   *  - dari keluaran gerbang ke masukan gerbang di kolom yang sama (ke belakang): keluar ke kanan, naik/turun lewat
+   *    celah antar-baris, lalu masuk dari kiri lewat saluran milik baris sumbernya, sehingga kabel tidak menembus
+   *    badan gerbang. Kabel dari sumber yang sama boleh menyatu (itu memang satu sambungan).
+   */
+  private drawWire(x1: number, y1: number, x2: number, y2: number, on: boolean, probeLane = -1, srcRow = 0): void {
     const c = this.ctx;
     c.strokeStyle = on ? this.pal.text : this.pal.dim; c.lineWidth = on ? 3 : 2;
-    c.beginPath(); c.moveTo(x1, y1); c.lineTo((x1 + x2) / 2, y1); c.lineTo((x1 + x2) / 2, y2); c.lineTo(x2, y2); c.stroke();
+    c.lineJoin = 'round';
+    c.beginPath(); c.moveTo(x1, y1);
+    if (x2 >= x1 + 30) {
+      const mx = probeLane >= 0 ? x2 - 44 + probeLane * 6 : (x1 + x2) / 2;
+      c.lineTo(mx, y1); c.lineTo(mx, y2); c.lineTo(x2, y2);
+    } else {
+      const row = Math.round((y1 - 50) / 100);                        // keluaran gerbang di y = 50 + 100*baris
+      const down = y2 > y1;
+      // pusat celah di bawah/atas baris asal; turun & naik diberi selisih 5px agar tidak menumpuk di celah yang sama
+      const gy = Math.min(Math.max((down ? 100 * (row + 1) + 5 : 100 * row - 5), 8), CANVAS_H - 8);
+      const xc = x2 - 26 + 6 * srcRow;                                // saluran vertikal di kiri gerbang tujuan, satu per baris sumber
+      c.lineTo(x1 + 12, y1); c.lineTo(x1 + 12, gy); c.lineTo(xc, gy); c.lineTo(xc, y2); c.lineTo(x2, y2);
+    }
+    c.stroke();
   }
+
   private drawPort(p: { x: number; y: number }, isOut: boolean): void {
     const c = this.ctx;
     c.beginPath(); c.arc(p.x, p.y, 7, 0, Math.PI * 2);
@@ -311,7 +341,9 @@ export class HackingScene extends Phaser.Scene {
     c.clearRect(0, 0, CANVAS_W, CANVAS_H);
     Object.entries(this.connections).forEach(([inId, srcId]) => {
       const a = P[srcId], b = P[inId];
-      if (a && b) this.drawWire(a.x, a.y, b.x, b.y, this.getValue(srcId) === 1);
+      if (!a || !b) return;
+      const probe = INPUT_NAMES.indexOf(srcId[0]);   // 0..2 untuk probe A/B/C, -1 untuk keluaran gerbang
+      this.drawWire(a.x, a.y, b.x, b.y, this.getValue(srcId) === 1, probe, srcId[0] === 'G' ? Number(srcId[1]) : 0);
     });
     if (this.selectedSource && P[this.selectedSource]) {
       const s = P[this.selectedSource];
@@ -329,10 +361,25 @@ export class HackingScene extends Phaser.Scene {
     });
     SLOT_BOX.forEach((b, idx) => {
       const type = this.gatesSlots[idx];
-      c.fillStyle = type ? this.pal.fill : this.pal.bg; c.strokeStyle = this.pal.dim; c.lineWidth = 2;
-      c.fillRect(b.x, b.y, b.w, b.h); c.strokeRect(b.x, b.y, b.w, b.h);
-      c.fillStyle = this.pal.text; c.font = '13px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(type || '[ ]', b.x + b.w / 2 + 8, b.y + b.h / 2);
+      const oy = b.y + GATE_DY;
+      if (type) {
+        // Simbol gerbang standar; kawat menyala (warna terang) bila membawa sinyal 1.
+        const sig = (id: string) => { const src = this.connections[id]; return src ? this.getValue(src) === 1 : false; };
+        const onC = this.pal.text, offC = this.pal.dim;
+        drawGateShape(c, type, b.x, oy, GATE_SCALE, {
+          stroke: this.pal.text, fill: this.pal.fill, bubbleFill: this.pal.bg, lineWidth: 2,
+          leadIn: [sig('G' + idx + '_in1') ? onC : offC, sig('G' + idx + '_in2') ? onC : offC],
+          leadOut: this.getValue('G' + idx + '_out') === 1 ? onC : offC
+        });
+        c.fillStyle = this.pal.dim; c.font = '9px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(type, b.x + 45 * GATE_SCALE, b.y + b.h - 3);
+      } else {
+        // Slot kosong: bingkai putus-putus di tempat badan gerbang.
+        c.strokeStyle = this.pal.dim; c.lineWidth = 2; c.setLineDash([4, 3]);
+        c.strokeRect(b.x + 18 * GATE_SCALE, oy + 6 * GATE_SCALE, 54 * GATE_SCALE, 48 * GATE_SCALE); c.setLineDash([]);
+        c.fillStyle = this.pal.dim; c.font = '13px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText('[ ]', b.x + 45 * GATE_SCALE, b.y + b.h / 2);
+      }
       this.drawPort(P['G' + idx + '_in1'], false);
       if (P['G' + idx + '_in2']) this.drawPort(P['G' + idx + '_in2'], false);
       this.drawPort(P['G' + idx + '_out'], true);

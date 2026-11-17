@@ -108,6 +108,21 @@ pastikan konsisten: persamaan (`label`), `target` (tabel kebenaran), `inputLabel
 menggambarkan perangkat yang sama; setiap input harus memengaruhi keluaran; teks cerita (`hackIntro`, `hackFailText`,
 `hackSuccessText` di `Chapters.ts`) tidak boleh mengklaim gerbang membobol/mendekripsi sesuatu.
 
+## Bentuk gerbang logika (vektor)
+
+Simbol gerbang memakai bentuk standar ANSI/IEEE (AND setengah lingkaran, OR perisai cekung, XOR + lengkung depan, NOT
+segitiga + gelembung, NAND/NOR/XNOR + gelembung). Satu sumber data: `src/ui/GateShapes.ts` (path SVG, viewBox 100 x 60;
+masukan di kiri, keluaran di kanan). Data yang sama dipakai di:
+
+- kanvas rangkaian (`drawGateShape`, Path2D) — titik sambung port ada di ujung kawat simbol;
+- chip palet dan ghost saat drag (`gateSvg`);
+- halaman materi di briefing chapter (`DialogueLine.gates`);
+- file SVG mandiri di `public/assets/gates/` (`and.svg`, `or.svg`, `not.svg`, `nand.svg`, `nor.svg`, `xor.svg`,
+  `xnor.svg`, dan lembar ringkasan `semua-gerbang.svg`), dibuat dengan `gateSvgDocument()`.
+
+Semua gerbang di `GateType` (termasuk XNOR, diperkenalkan di Chapter 5 sebagai soal ke-2 setelah XOR) punya simbol. Kalau
+mengubah bentuk di `GateShapes.ts`, buat ulang file SVG dengan memanggil `gateSvgDocument(nama)` untuk tiap gerbang.
+
 ## Langkah lanjutan yang disarankan
 
 - Pindahkan `GATES`/`HACK_TARGET` di `HackingScene.ts` ke file level baru

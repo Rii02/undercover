@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="120" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60" role="img" aria-label="Simbol gerbang XNOR" fill="none" stroke="#1b2233" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"><title>Gerbang XNOR</title><path d="M0 15 H21.5 M0 45 H21.5 M92 30 H100"/><path d="M22 6 C42 6 66 12 82 30 C66 48 42 54 22 54 C34 38 34 22 22 6 Z" fill="#ffffff"/><path d="M16 6 C28 22 28 38 16 54"/><circle cx="87" cy="30" r="5" fill="#ffffff"/></svg>

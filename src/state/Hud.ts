@@ -1,5 +1,6 @@
 import { GameState, SLOT_ICON, SLOTS, DEFAULT_PLAYER_NAME } from './GameState';
 import { ChapterConfig, DialogueLine, TruthTable } from './Chapters';
+import { gateSvg, ShapeName } from '../ui/GateShapes';
 import { charFrame, CHAR_COLS, CHAR_ROWS, CHAR_W, CHAR_SHEET_URL } from './Sprites';
 
 /** Nama panggilan pemain yang tampil sebagai label pembicara. Diisi MapScene lewat Hud.setPlayerName(). */
@@ -91,8 +92,8 @@ function showPortraits(otherKey: string, speaker: 'me' | 'other' | null): void {
   paintPortrait(portraitR!, otherKey, 'left', speaker === 'other', px);
 }
 
-/** Tambahkan tabel kebenaran mini ke kotak dialog (dibuat lewat DOM + textContent, jadi aman dari HTML). */
-function renderTruthTable(host: HTMLElement, t: TruthTable): void {
+/** Bangun elemen tabel kebenaran mini (dibuat lewat DOM + textContent, jadi aman dari HTML). */
+function buildTruthTable(t: TruthTable): HTMLTableElement {
   const tbl = document.createElement('table');
   tbl.className = 'dlgTable';
   tbl.setAttribute('aria-label', 'Tabel kebenaran');
@@ -107,7 +108,33 @@ function renderTruthTable(host: HTMLElement, t: TruthTable): void {
       if (i === r.length - 1) td.className = v ? 'y1' : 'y0';   // kolom keluaran Y disorot
     });
   });
-  host.appendChild(tbl);
+  return tbl;
+}
+
+/** Simbol gerbang (vektor dari ui/GateShapes.ts) + namanya, untuk halaman materi. */
+function buildGateFigure(name: ShapeName): HTMLElement {
+  const fig = document.createElement('figure');
+  fig.className = 'dlgGate';
+  fig.innerHTML = gateSvg(name, { fill: 'var(--off)', bubbleFill: 'var(--panel)' });   // markup dari data tetap, bukan input pengguna
+  const cap = document.createElement('figcaption');
+  cap.textContent = name;
+  fig.appendChild(cap);
+  return fig;
+}
+
+/** Halaman materi: simbol gerbang di samping tabel kebenaran (bila ada), ditambahkan di bawah teks dialog. */
+function renderMateri(host: HTMLElement, line: DialogueLine): void {
+  if (!line.table && !line.gates?.length) return;
+  const row = document.createElement('div');
+  row.className = 'dlgMateri';
+  if (line.gates?.length) {
+    const g = document.createElement('div');
+    g.className = 'dlgGates';
+    line.gates.forEach(n => g.appendChild(buildGateFigure(n)));
+    row.appendChild(g);
+  }
+  if (line.table) row.appendChild(buildTruthTable(line.table));
+  host.appendChild(row);
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -189,7 +216,7 @@ export const Hud = {
     showPortraits(PORTRAIT_KEY_BOSS, line.speaker === 'Aku' ? 'me' : line.speaker === 'Bos' ? 'other' : null);   // Narasi/Materi: kedua potret redup
     this.dialogName.textContent = line.speaker === 'Aku' ? playerSpeakerLabel() : STORY_SPEAKER[line.speaker];
     this.dialogText.textContent = line.text;
-    if (line.table) renderTruthTable(this.dialogText, line.table);   // halaman materi: tabel kebenaran di bawah teks
+    renderMateri(this.dialogText, line);   // halaman materi: simbol gerbang + tabel kebenaran di bawah teks
     if (isLast) {
       this.dialogHint.style.display = 'none';
       this.dialogCtaBtn.style.display = 'block';

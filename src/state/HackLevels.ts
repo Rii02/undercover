@@ -1,4 +1,4 @@
-export type GateType = 'AND' | 'OR' | 'NOT' | 'XOR' | 'NAND' | 'NOR';
+export type GateType = 'AND' | 'OR' | 'NOT' | 'XOR' | 'XNOR' | 'NAND' | 'NOR';
 
 /** Satu teka-teki sirkuit: tabel kebenaran target. Kunci = nilai input berurutan ("AB" atau "ABC"), nilai = lampu 0/1. */
 export interface HackPuzzle {
@@ -34,6 +34,7 @@ export const GATE_INFO: Record<GateType, string> = {
   OR: 'keluaran 1 jika salah satu atau kedua masukan 1.',
   NOT: 'membalik masukan: 0 menjadi 1, 1 menjadi 0.',
   XOR: 'keluaran 1 jika tepat satu dari dua masukan 1.',
+  XNOR: 'kebalikan XOR: keluaran 1 jika kedua masukan sama (keduanya 0 atau keduanya 1).',
   NAND: 'kebalikan AND: keluaran 0 hanya jika kedua masukan 1.',
   NOR: 'kebalikan OR: keluaran 1 hanya jika kedua masukan 0.'
 };
@@ -100,14 +101,20 @@ export const HACK_LEVELS: HackLevel[] = [
     ]
   },
   {
-    level: 5, title: 'XOR / NAND / NOR', inputs: 2, gates: ['AND', 'OR', 'NOT', 'XOR', 'NAND', 'NOR'],
-    description: 'Gerbang turunan: XOR, NAND, NOR.',
+    level: 5, title: 'XOR / XNOR / NAND / NOR', inputs: 2, gates: ['AND', 'OR', 'NOT', 'XOR', 'XNOR', 'NAND', 'NOR'],
+    description: 'Gerbang turunan: XOR, XNOR, NAND, NOR.',
     puzzles: [
       {
         label: 'Y = A XOR B', minGates: 1,
         context: 'Pengunci sesi bergilir: log hanya terlepas jika tepat satu operator yang sedang login. Dua operator sekaligus, atau tidak ada, tetap terkunci.',
         inputLabels: ['Operator 1 login', 'Operator 2 login'], outputLabel: 'Kunci sesi',
         target: { '00': 0, '01': 1, '10': 1, '11': 0 }
+      },
+      {
+        label: 'Y = A XNOR B', minGates: 1,
+        context: 'Indikator kesesuaian sensor ganda: lampu SAMA menyala jika sensor utama dan sensor cadangan menunjukkan nilai yang sama (keduanya aktif atau keduanya mati). Jika berbeda, lampu BEDA menyala dan salah satu sensor perlu diperiksa.',
+        inputLabels: ['Sensor utama aktif', 'Sensor cadangan aktif'], outputLabel: 'Sensor sinkron', lampText: ['BEDA', 'SAMA'],
+        target: { '00': 1, '01': 0, '10': 0, '11': 1 }
       },
       {
         label: 'Y = A NAND B', minGates: 1,
@@ -124,7 +131,7 @@ export const HACK_LEVELS: HackLevel[] = [
     ]
   },
   {
-    level: 6, title: 'Rangkaian Kompleks', inputs: 3, gates: ['AND', 'OR', 'NOT', 'XOR', 'NAND', 'NOR'],
+    level: 6, title: 'Rangkaian Kompleks', inputs: 3, gates: ['AND', 'OR', 'NOT', 'XOR', 'XNOR', 'NAND', 'NOR'],
     description: 'Multiplexer: A memilih antara B dan C.',
     puzzles: [
       {
